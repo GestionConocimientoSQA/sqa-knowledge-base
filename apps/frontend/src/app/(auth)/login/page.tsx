@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Compass, ShieldCheck, UserPen, UsersRound } from "lucide-react";
+import { Compass, UserPen, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SqaLogo } from "@/components/brand/sqa-logo";
@@ -13,7 +13,6 @@ import type { RoleId } from "@/types/domain";
 
 const ROLE_ICONS: Record<RoleId, React.ComponentType<{ className?: string }>> = {
   capturador: UserPen,
-  curador: ShieldCheck,
   owner: UsersRound,
   gklead: Compass,
 };

@@ -2,14 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard,
   Mic,
   SearchCode,
   Inbox,
   LibraryBig,
-  ShieldCheck,
   Settings2,
   Settings,
   type LucideIcon,
@@ -18,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { SqaLogo } from "@/components/brand/sqa-logo";
 import { AriaMascot } from "@/components/brand/aria-mascot";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { SidebarSessions } from "@/components/layout/sidebar-sessions";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { useUiStore } from "@/stores/ui-store";
 import { ROLES } from "@/lib/mocks/data";
@@ -28,6 +28,12 @@ interface NavItem {
   icon: LucideIcon;
   href: string;
   count?: number;
+  /**
+   * Permite que dos items con el mismo `href` se diferencien por query string
+   * (ej. /chat?mode=captura vs /chat?mode=consulta). Si se omite, el activeMatch
+   * cae a `pathname.startsWith(href)`.
+   */
+  activeWhen?: (pathname: string, search: URLSearchParams) => boolean;
 }
 
 interface NavGroup {
@@ -40,8 +46,20 @@ const NAV_GROUPS: NavGroup[] = [
     label: "TRABAJO",
     items: [
       { id: "dashboard", label: "Métricas", icon: LayoutDashboard, href: "/dashboard" },
-      { id: "chat-capture", label: "Captura", icon: Mic, href: "/chat/captura" },
-      { id: "chat-consulta", label: "Consulta", icon: SearchCode, href: "/chat/consulta" },
+      {
+        id: "chat-capture",
+        label: "Captura",
+        icon: Mic,
+        href: "/chat?mode=captura",
+        activeWhen: (p, s) => p === "/chat" && s.get("mode") === "captura",
+      },
+      {
+        id: "chat-consulta",
+        label: "Consulta",
+        icon: SearchCode,
+        href: "/chat?mode=consulta",
+        activeWhen: (p, s) => p === "/chat" && s.get("mode") === "consulta",
+      },
       { id: "ingestion", label: "Ingesta", icon: Inbox, href: "/ingestion", count: 4 },
     ],
   },
@@ -49,7 +67,6 @@ const NAV_GROUPS: NavGroup[] = [
     label: "CONOCIMIENTO",
     items: [
       { id: "explorer", label: "Catálogo", icon: LibraryBig, href: "/explorer" },
-      { id: "curacion", label: "Curaduría", icon: ShieldCheck, href: "/curacion", count: 4 },
     ],
   },
   {
@@ -60,6 +77,7 @@ const NAV_GROUPS: NavGroup[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const role = user ? ROLES[user.roleId] : null;
@@ -125,6 +143,7 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="relative z-10 flex-1 overflow-y-auto px-2 pb-4">
+        {!collapsed && <SidebarSessions />}
         {NAV_GROUPS.map((group) => (
           <div key={group.label} className="mb-[18px]">
             {!collapsed && (
@@ -133,7 +152,9 @@ export function Sidebar() {
               </div>
             )}
             {group.items.map((item) => {
-              const active = pathname.startsWith(item.href);
+              const active = item.activeWhen
+                ? item.activeWhen(pathname, searchParams)
+                : pathname.startsWith(item.href);
               const Icon = item.icon;
               return (
                 <Link

@@ -1,5 +1,9 @@
-// === Roles (alineado con prototipo AgenteGK) ===
-export type RoleId = "capturador" | "curador" | "owner" | "gklead";
+// === Roles ===
+// Tres roles según la matriz operativa actual (2026-05-19): Capturador
+// (Colaborador), Owner de carpeta, GK Lead. El antiguo "Curador" desaparece
+// como rol de login — en Fase 2 será una asignación por carpeta que hace el
+// Owner, no un usuario propio.
+export type RoleId = "capturador" | "owner" | "gklead";
 
 export interface Role {
   id: RoleId;
@@ -135,15 +139,3 @@ export interface IngestionItem {
   duplicadoDe?: string;
 }
 
-// === Curaduría ===
-export interface CurationItem {
-  id: string;
-  docId: string;
-  motivo: "promocion" | "obsolescencia" | "conflicto";
-  titulo: string;
-  autor: string;
-  score: number;
-  dias: number;
-  carpeta: CategoryCode;
-  accion: string;
-}

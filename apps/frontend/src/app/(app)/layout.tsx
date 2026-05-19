@@ -15,16 +15,12 @@ interface RouteMeta {
 const ROUTE_META: ReadonlyArray<{ match: RegExp; meta: RouteMeta }> = [
   { match: /^\/dashboard/, meta: { title: "Métricas", breadcrumb: "Trabajo" } },
   {
-    match: /^\/chat\/captura/,
-    meta: { title: "Captura conversacional", breadcrumb: "Trabajo · Modo A" },
+    match: /^\/chat\/[^/]+$/,
+    meta: { title: "Conversación con Aria", breadcrumb: "Trabajo" },
   },
   {
-    match: /^\/chat\/consulta/,
-    meta: { title: "Consulta de la base", breadcrumb: "Trabajo · Modo B" },
-  },
-  {
-    match: /^\/chat\/ingesta/,
-    meta: { title: "Ingesta conversacional", breadcrumb: "Trabajo · Modo C" },
+    match: /^\/chat$/,
+    meta: { title: "Iniciar conversación", breadcrumb: "Trabajo" },
   },
   {
     match: /^\/ingestion/,
@@ -33,10 +29,6 @@ const ROUTE_META: ReadonlyArray<{ match: RegExp; meta: RouteMeta }> = [
   {
     match: /^\/explorer/,
     meta: { title: "Catálogo", breadcrumb: "Conocimiento" },
-  },
-  {
-    match: /^\/curacion/,
-    meta: { title: "Bandeja de curaduría", breadcrumb: "Conocimiento" },
   },
   {
     match: /^\/admin/,

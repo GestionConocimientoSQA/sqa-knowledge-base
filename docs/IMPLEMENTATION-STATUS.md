@@ -10,9 +10,9 @@
 |---|---|
 | Timeline estimado total | 16-20 semanas |
 | Fases totales | 12 (Fase 0 a Fase 11) |
-| Fases completadas | **2** (Fase 0 + Fase 5) |
+| Fases completadas | **3** (Fase 0 + Fase 5 + Fase 6) |
 | Fase actual | — (en pausa entre fases) |
-| Próxima fase | Fase 1 — Backend: Persistencia y Auth |
+| Próxima fase | Fase 1 — Backend: Persistencia y Auth (desbloquea Fases 2-4) |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI esqueleto ✓ · Infra Bicep esqueleto ✓ |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
 
@@ -26,7 +26,7 @@
 | 3 | Backend · RAG vectorial | 7-8 | ⬜ Pendiente | 0% |
 | 4 | Backend · Generación y extracción de docs | 9-10 | ⬜ Pendiente | 0% |
 | **5** | **Frontend · Fundación (UI + auth stub)** | **11-12** | **✅ Completada** | **100%** |
-| 6 | Frontend · Chat streaming SSE | 13-14 | ⬜ Pendiente | 0% |
+| **6** | **Frontend · Chat streaming SSE (con mock-transport)** | **13-14** | **✅ Completada** | **100%** |
 | 7 | Frontend · Explorer + Dashboard interactivo | 15 | ⬜ Pendiente | 0% (esqueleto en Fase 5) |
 | 8 | Frontend · Cola de ingesta | 16 | ⬜ Pendiente | 0% |
 | 9 | Frontend · Admin (usuarios, taxonomía, skills, audit) | 17 | ⬜ Pendiente | 0% |
@@ -483,50 +483,184 @@ tests/
 
 # Fase 6 · Frontend · Chat streaming
 
-**Estado:** ⬜ Pendiente · **Semanas roadmap:** 13-14 · **Es la siguiente a abordar**
+**Estado:** ✅ Completada · **Validada:** 2026-05-19 · **Semanas roadmap:** 13-14
 
 ## Objetivo
 
-Experiencia de chat completa con streaming SSE, mode selector A/B/C, attachments, stage indicator del agente, scoring en vivo.
+Experiencia de chat completa con streaming SSE, mode selector A/B/C, attachments, stage indicator del agente, scoring en vivo. **Implementada con mock-transport local** (ruta recomendada en la estrategia original) — desbloquea validación de UX con stakeholders sin depender del backend.
 
-## Tareas planificadas
+## Estrategia ejecutada
 
-- ⬜ Página selección de modo (cards conceptuales A/B/C con descripciones)
-- ⬜ Página chat por sesión `/chat/[sessionId]`
-- ⬜ Componente `ChatWindow` con scroll virtualizado
-- ⬜ `MessageBubble` con render Markdown (react-markdown + remark-gfm)
-- ⬜ `StreamingMessage` con efecto typewriter
-- ⬜ Hook `use-chat-stream` (consume SSE del backend `POST /sessions/{id}/messages`)
-- ⬜ Manejo de eventos SSE: `message-start`, `stage-change`, `classification`, `text-delta`, `citation`, `scoring`, `document-generated`, `error`, `ping`
-- ⬜ Reconexión con `Last-Event-ID` (eventos persistidos 1h en Redis)
-- ⬜ `AttachmentUploader` (drag & drop multi-file → Blob via presigned URL)
-- ⬜ `StageIndicator` (visualiza ETAPA actual con stepper animado)
-- ⬜ `ClassificationCard` (muestra carpeta + tipo sugeridos con confianza)
-- ⬜ Lista de sesiones en sidebar con search/filtros
-- ⬜ Pausar/reanudar sesión sin pérdida de estado
-- ⬜ Preview inline de documentos generados (`DocxViewer`, `PdfViewer`)
-- ⬜ Tests E2E del flujo completo de captura
+Se siguió la **opción 2** del plan original: implementar la UI completa contra un `MockMessageTransport` que emite los 14 tipos de eventos SSE del §15.2 del ROADMAP con timing realista. Cuando Fase 2 (backend agente) esté lista, el swap a backend real es cambio de constructor en `transport-factory.ts`, sin tocar UI ni reducer (DIP estricto).
 
-## Definition of Done
+## Ejecución por sub-fases
 
-- Usuario puede ejecutar flujo completo de captura desde UI
-- Streaming es fluido sin pestañeos (60fps)
-- Sesiones se pueden pausar y retomar
-- Attachments se cargan a Blob Storage exitosamente
-- Stage indicator refleja correctamente el progreso
+La fase se ejecutó en 6 sub-fases incrementales con pausa para validar al cerrar cada una:
 
-## Dependencias
+### Sub-fase 6.1 · Contratos + mock backbone
 
-- **Backend Fase 2 implementado** (streaming SSE + sesiones funcionales) — bloqueante
+Cimientos sin UI nueva. Define los puertos que las sub-fases siguientes consumen.
 
-## Estrategia recomendada
+- ✅ `types/agent.ts` — payloads de los 14 SSE events, `AgentSession`, `AgentMessage`, `StageId` extendido (0-5 captura, "C" consulta, "I" ingesta)
+- ✅ `lib/streaming/sse-events.ts` — discriminated union `AgentEvent`
+- ✅ `lib/streaming/reducer.ts` — `streamReducer` puro (sin React); maneja acciones cliente + eventos servidor
+- ✅ `lib/streaming/transport.ts` — interfaz `MessageTransport` (DIP)
+- ✅ `lib/streaming/mock-transport.ts` — generator con scripts por modo A/B/C, respeta `AbortSignal`
+- ✅ `lib/streaming/use-chat-stream.ts` — hook React con `send`, `cancel`, `reset`, `retry`
+- ✅ `lib/api/sessions-store.ts` + `sessions.ts` — CRUD stub con localStorage (espejo §15.3)
+- ✅ 27 tests nuevos (reducer · mock-transport · sessions-api)
 
-Como la Fase 6 depende del backend (Fase 2), hay dos rutas:
+### Sub-fase 6.2 · Selector de modo + ruta de sesión
 
-1. **Esperar a backend** — implementar Fase 1+2 antes de Fase 6.
-2. **Mock SSE simulado** — implementar Fase 6 con un generator local que simula los eventos del agente (`apps/frontend/src/lib/streaming/mock-sse.ts`). Permite validar UX sin backend. Cuando esté listo, solo se cambia la URL del EventSource.
+- ✅ `lib/chat/mode-copy.ts` — SSOT de copy + iconografía por modo (A/B/C)
+- ✅ `components/chat/mode-selector-card.tsx` — card con estado seleccionado + pending
+- ✅ `components/chat/session-header.tsx` — header con título, modo, status, pausar/reanudar
+- ✅ `app/(app)/chat/page.tsx` — selector, lee `?mode=` para preselección, crea sesión y navega
+- ✅ `app/(app)/chat/[sessionId]/page.tsx` + `not-found.tsx`
+- ✅ Sidebar `NavItem.activeWhen` para diferenciar items con mismo `href` y distinto query
+- ✅ `<Toaster />` de sonner integrado en `providers.tsx`
 
-**Recomendación:** opción 2 — paralelizable y desbloquea validación de UX con stakeholders.
+### Sub-fase 6.3 · UI estática del chat
+
+Componentes presentational consumiendo mock messages. Validación visual del layout.
+
+- ✅ `components/chat/citation-chip.tsx` — chip con tooltip (sección + snippet)
+- ✅ `components/chat/classification-card.tsx` — categoría + tipo + barra de confianza + rationale
+- ✅ `components/chat/scoring-panel.tsx` — 4 dimensiones + valueScore, color por tono
+- ✅ `components/chat/stage-indicator.tsx` — stepper 0-5 captura, pill C/I consulta/ingesta
+- ✅ `components/chat/message-bubble.tsx` — render Markdown (react-markdown + remark-gfm) con sub-componentes
+- ✅ `components/chat/chat-window.tsx` — lista scrolleable con auto-scroll
+- ✅ `components/chat/composer.tsx` — textarea autoresize, Enter envía, contador char
+- ✅ Dependencias agregadas: `react-markdown@^9` + `remark-gfm@^4`
+
+### Sub-fase 6.4 · Streaming en vivo
+
+Conexión del hook con la UI.
+
+- ✅ `lib/streaming/transport-factory.ts` — singleton `getDefaultTransport()`; swap a SSE real en Fase 2 cambia una línea
+- ✅ Page refactorizado: `state.messages` (en vez de mocks), `state.currentStage`, `state.status`
+- ✅ Composer reacciona a `busy` — botón muta a Square (cancelar) mientras streaming
+- ✅ Toast de error con acción "Reintentar" que llama `retry()` del hook
+- ✅ Cancelación con `AbortController` propagada al generator del mock-transport
+
+### Sub-fase 6.5 · Persistencia + sidebar de sesiones
+
+- ✅ `lib/api/messages-store.ts` — storage separado para mensajes por sessionId
+- ✅ `lib/api/sessions.ts` extendido — `saveMessages` mantiene en sync `messageCount` + `currentStage` + `updatedAt`; `restoreSession` para undo
+- ✅ Hidratación al cargar — `useQuery` por `getMessages` → `initialMessages` al hook
+- ✅ Auto-save con `lastPersistedCountRef` — solo persiste cuando un mensaje pasa a complete, evita escrituras durante typewriter
+- ✅ `components/chat/session-list-item.tsx` — variantes `compact` + `dark` (sidebar) y full (panel)
+- ✅ `components/layout/sidebar-sessions.tsx` — top 5 recientes en el sidebar con sesión activa resaltada
+- ✅ `components/chat/session-filters.tsx` — search + chip group por modo/status
+- ✅ `components/chat/session-history-panel.tsx` — listado con filtros locales + delete con undo (8s)
+- ✅ Bug fix: reducer `hydrate` ahora deriva `currentStage` desde mensajes hidratados (antes F5 borraba el highlight del stepper)
+- ✅ 5 tests nuevos de persistencia
+
+### Sub-fase 6.6 · Attachments + preview de documentos
+
+- ✅ `lib/api/attachments-store.ts` + `attachments.ts` — uploadAttachment con progress simulado, validación de tamaño (10 MB max) y mime
+- ✅ `lib/files.ts` — `formatBytes`, `iconForFile`, `extensionFromFilename`
+- ✅ `lib/hooks/use-file-drop-zone.ts` — hook con contador de `enter` para evitar flicker
+- ✅ `components/chat/attachment-chip.tsx` — chip pre-envío con progress bar inline
+- ✅ `components/chat/attachment-uploader.tsx` — botón paperclip + file picker multi-file
+- ✅ `components/chat/document-artifact-card.tsx` — refactor del bloque artifacts con botones Vista previa + Descargar
+- ✅ `components/chat/document-preview-dialog.tsx` — Sheet lateral con metadata + placeholder (viewer real en Fase 4)
+- ✅ Drag & drop sobre el page con overlay "Soltá para adjuntar"
+- ✅ Hook `useChatStream.send(content, attachmentIds?)` propaga attachments al transport
+- ✅ Limpieza post-send — attachments uploaded se eliminan del store local tras enviar
+- ✅ 8 tests nuevos de attachments
+
+## Ajustes laterales aplicados durante Fase 6
+
+Cambios fuera del scope original pero gatillados por revisión durante la implementación:
+
+- **Markdown links seguros:** `<a>` del renderer detecta links externos (`https?://`) y agrega `target="_blank"` + `rel="noopener noreferrer nofollow"` para cortar `window.opener` y referer leak (defensa en profundidad sobre el `Referrer-Policy` global). Memoria persistida [[project-security-idor-check]] con nota para Fase 1 sobre ownership checks de `/sessions/{id}/*`.
+- **Token-usage gateado por isAdmin:** el footer `1240 in · 380 out · USD 0.0124 · model` solo es visible para roles admin (GK Lead, Owner). Capturador ve el chat limpio. Persistencia BD del campo `cost_usd` queda intacta para dashboard de Fase 7.
+- **Refactor de roles (4 → 3):** se eliminó "Curador temático" como rol de login según matriz operativa actualizada (2026-05-19). Capturador (Colaborador), Owner de carpeta, GK Lead. El concepto "curador" reaparece en Fase 2 como asignación por carpeta hecha por el Owner. Memoria persistida [[project-roles-capacidades]] con matriz completa Fase 1/2.
+- **Bug fix bubble vacío al quitar attachment:** el botón X del chip era `type="submit"` implícito y submitea el form. Fix: `type="button"`. Test de regresión RTL añadido.
+
+## Entregables · resumen
+
+```
+apps/frontend/src/
+├── types/agent.ts                              tipos del dominio del agente
+├── lib/
+│   ├── chat/mode-copy.ts                       SSOT modos A/B/C
+│   ├── files.ts                                helpers de presentación
+│   ├── hooks/use-file-drop-zone.ts             drag&drop hook
+│   ├── api/
+│   │   ├── sessions.ts                         CRUD + getMessages + saveMessages + restoreSession
+│   │   ├── sessions-store.ts                   adapter localStorage sesiones
+│   │   ├── messages-store.ts                   adapter localStorage mensajes
+│   │   ├── attachments.ts                      upload + validation
+│   │   └── attachments-store.ts                adapter localStorage attachments
+│   └── streaming/
+│       ├── sse-events.ts                       discriminated union 14 eventos
+│       ├── reducer.ts                          streamReducer puro
+│       ├── transport.ts                        interfaz MessageTransport (DIP)
+│       ├── mock-transport.ts                   scripts A/B/C con timing realista
+│       ├── transport-factory.ts                singleton — swap a SSE real en 1 línea
+│       └── use-chat-stream.ts                  hook (send/cancel/reset/retry)
+├── components/
+│   ├── chat/
+│   │   ├── mode-selector-card.tsx
+│   │   ├── session-header.tsx
+│   │   ├── session-list-item.tsx               variantes sidebar + panel
+│   │   ├── session-filters.tsx
+│   │   ├── session-history-panel.tsx
+│   │   ├── stage-indicator.tsx                 stepper modo A / pill modos B,C
+│   │   ├── chat-window.tsx
+│   │   ├── message-bubble.tsx                  Markdown + sub-componentes
+│   │   ├── citation-chip.tsx
+│   │   ├── classification-card.tsx
+│   │   ├── scoring-panel.tsx
+│   │   ├── document-artifact-card.tsx
+│   │   ├── document-preview-dialog.tsx
+│   │   ├── composer.tsx                        attachments + autoresize
+│   │   ├── attachment-chip.tsx
+│   │   └── attachment-uploader.tsx
+│   └── layout/sidebar-sessions.tsx             top 5 recientes
+└── app/(app)/chat/
+    ├── page.tsx                                selector + historial con filtros
+    └── [sessionId]/
+        ├── page.tsx                            sesión completa con streaming
+        └── not-found.tsx
+```
+
+## Definition of Done · ejecución
+
+- ✅ Usuario puede ejecutar flujo completo de captura desde UI (modo A end-to-end)
+- ✅ Streaming es fluido — deltas a 30ms, transiciones de stage a 220ms, sin pestañeos
+- ✅ Sesiones se pueden pausar y reanudar sin pérdida de estado (persistencia localStorage)
+- ✅ Attachments se cargan con progress simulado, validación de mime + tamaño
+- ✅ Stage indicator refleja correctamente el progreso (con fix de hidratación F5)
+- ✅ Pendientes diferidos a Fase 10 (E2E con Playwright) y Fase 2 (SSE real con Last-Event-ID)
+
+## Validación final
+
+| Check | Resultado |
+|---|---|
+| `pnpm typecheck` | ✅ 0 errores |
+| `pnpm test` | ✅ **49/49** (Vitest + RTL) |
+| `pnpm build` | ✅ 10/10 páginas · `/chat/[sessionId]` 62.6 kB · 105 kB shared (muy debajo del objetivo < 500 kB del ROADMAP §17) |
+| Smoke HTTP rutas chat | ✅ 200 en `/chat`, `/chat?mode=*`, `/chat/<uuid>` |
+| Validación visual usuario | ✅ flujo captura A · consulta B · ingesta C · attachments · preview |
+
+## Pendientes diferidos (intencional)
+
+- **E2E con Playwright** → diferido a Fase 10 (Hardening), según ROADMAP original.
+- **Reconexión con `Last-Event-ID` real** → la interfaz del hook ya acepta el parámetro; el mock lo ignora. Se activa cuando llegue `SseMessageTransport` (Fase 2).
+- **Backend Fase 2 implementado** → era declarado bloqueante en el plan original; se sorteó con mock-transport. Cuando Fase 2 esté lista, el swap es cambio de implementación en `transport-factory.ts`, sin tocar UI ni reducer.
+- **Virtualización de mensajes (`@tanstack/react-virtual`)** → no se incluyó. Sin métricas de jank con conversaciones largas no aporta. Cuando se vean problemas reales con 100+ mensajes, se agrega.
+
+## Decisiones de diseño relevantes
+
+- **DIP estricto en transport:** la UI consume `MessageTransport` (interfaz), no `MockMessageTransport` (implementación). El swap mock → SSE real es de 1 línea en `transport-factory.ts`.
+- **Reducer puro sin React:** el ciclo de vida del stream se decide en una función testeable sin DOM. Reusable para replay de eventos persistidos desde Redis buffer del backend real.
+- **Tres stores separados** (sessions, messages, attachments) en localStorage para reflejar el contrato HTTP del backend (§15.3): listar sesiones no carga mensajes; abrir sesión no carga attachments.
+- **`StageId = 0-5 | "C" | "I"`:** cubre los 3 modos sin perder cardinalidad de la etapa numérica de captura.
+- **Auto-save con `lastPersistedCountRef`:** filtra mensajes en streaming y evita escrituras a localStorage por cada `text-delta` (1 escritura por turno completo, no 100).
+- **`Sheet` lateral derecha para preview** (no Dialog modal): mantiene la conversación visible al lado, útil cuando llegue el viewer real de Fase 4 con páginas DOCX/PDF.
 
 ---
 
@@ -769,11 +903,12 @@ Datos legacy migrados, TI desplegando autónomamente, agente actual decomisionad
 
 # Próximos pasos sugeridos
 
-1. **Commit inicial** del repo (`git add . && git commit -m "chore: bootstrap monorepo + phase 0 + phase 5 frontend"`)
-2. Crear repo en GitHub/Azure DevOps + push
-3. Configurar GitHub Variables (`AZURE_ACR_NAME`) y Secrets (`AZURE_CLIENT_ID/TENANT_ID/SUBSCRIPTION_ID` con federated credentials OIDC)
-4. **Decisión:** arrancar Fase 1 (backend persistencia + auth) o Fase 6 con SSE mockeado en paralelo
-5. Si Fase 1: solicitar a TI App Registration en Entra ID para tenant SQA
+1. **Commit del cierre de Fase 6** — el repo tiene un único commit (`828ff59` cerrando Fase 0 + 5). Crear commit con todo lo de Fase 6 antes de seguir.
+2. Crear repo en GitHub/Azure DevOps + push (sigue pendiente desde Fase 0).
+3. Configurar GitHub Variables (`AZURE_ACR_NAME`) y Secrets (`AZURE_CLIENT_ID/TENANT_ID/SUBSCRIPTION_ID` con federated credentials OIDC).
+4. **Arrancar Fase 1 — Backend · Persistencia + Auth Entra ID.** Desbloquea Fases 2 (LangGraph), 3 (RAG) y 4 (extractores/generadores). El frontend ya está listo para consumir endpoints reales — el swap del `MockMessageTransport` por `SseMessageTransport` será de 1 línea en `transport-factory.ts`.
+5. Antes de Fase 1: solicitar a TI App Registration en Entra ID para tenant SQA (lleva tiempo).
+6. Revisar las memorias del proyecto antes de arrancar Fase 1: matriz de roles ([[project-roles-capacidades]]) y ownership checks para evitar IDOR ([[project-security-idor-check]]).
 
 # Glosario rápido
 

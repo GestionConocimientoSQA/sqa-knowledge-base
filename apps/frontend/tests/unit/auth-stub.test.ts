@@ -29,7 +29,7 @@ describe("auth-stub", () => {
   });
 
   it("signOut clears the session", () => {
-    signIn("curador");
+    signIn("owner");
     expect(isAuthenticated()).toBe(true);
     signOut();
     expect(isAuthenticated()).toBe(false);

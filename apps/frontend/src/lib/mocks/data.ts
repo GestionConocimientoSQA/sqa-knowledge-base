@@ -5,31 +5,22 @@ import type {
   DocType,
   DocumentItem,
   IngestionItem,
-  CurationItem,
   Stage,
 } from "@/types/domain";
 
 export const ROLES: Record<RoleId, Role & { name: string; email: string }> = {
   capturador: {
     id: "capturador",
-    label: "Capturador",
-    sub: "QA · Automation · Test Lead",
+    label: "Capturador (Colaborador)",
+    sub: "QA, Automation Engineer, Test Lead, áreas transversales",
     name: "Lucía Vargas",
     email: "lucia.vargas@sqa.co",
     icon: "user-pen",
   },
-  curador: {
-    id: "curador",
-    label: "Curador temático",
-    sub: "Valida una carpeta",
-    name: "Mateo Robles",
-    email: "mateo.robles@sqa.co",
-    icon: "shield-check",
-  },
   owner: {
     id: "owner",
     label: "Owner de carpeta",
-    sub: "Vigila salud agregada",
+    sub: "Responsable formal de una carpeta temática",
     name: "Camila Pereyra",
     email: "camila.pereyra@sqa.co",
     icon: "users-round",
@@ -37,7 +28,7 @@ export const ROLES: Record<RoleId, Role & { name: string; email: string }> = {
   gklead: {
     id: "gklead",
     label: "GK Lead",
-    sub: "Gobierno y métricas",
+    sub: "Líder de Gestión del Conocimiento",
     name: "Andrés Altamiranda",
     email: "andres.altamiranda@sqa.co",
     icon: "compass",
@@ -213,20 +204,6 @@ export const INGESTION_PENDING: IngestionItem[] = [
     fuenteOriginal: "SharePoint/QA/Plantillas/",
     version: "1.4",
     estado: "listo",
-  },
-];
-
-export const CURATION_TRAY: CurationItem[] = [
-  {
-    id: "c1",
-    docId: "TEC-contract-testing-pact-2026-04-08",
-    motivo: "promocion",
-    titulo: "Contract testing entre BFF y servicios downstream con Pact",
-    autor: "Tomás Sequeira",
-    score: 3.8,
-    dias: 4,
-    carpeta: "TEC",
-    accion: "Revisar para promoción a autoritativo",
   },
 ];
 
