@@ -1,0 +1,28 @@
+# Normaliza line endings: LF en el repo, auto en checkout.
+# Evita los warnings "LF will be replaced by CRLF" en Windows.
+
+* text=auto eol=lf
+
+# Forzar LF para archivos shell/scripts (deben funcionar en contenedores Linux)
+*.sh             text eol=lf
+*.bash           text eol=lf
+Dockerfile       text eol=lf
+*.dockerfile     text eol=lf
+
+# Scripts PowerShell deben mantener CRLF para PS 5.1 antiguos
+*.ps1            text eol=crlf
+
+# Binarios
+*.png            binary
+*.jpg            binary
+*.jpeg           binary
+*.gif            binary
+*.ico            binary
+*.pdf            binary
+*.woff           binary
+*.woff2          binary
+*.ttf            binary
+*.otf            binary
+*.zip            binary
+*.tar            binary
+*.gz             binary

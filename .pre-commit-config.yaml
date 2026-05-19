@@ -1,0 +1,41 @@
+# Pre-commit hooks. Instalación opcional:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Si no instalás pre-commit, los mismos checks corren en CI.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        files: ^apps/backend/
+        args: [--fix]
+      - id: ruff-format
+        files: ^apps/backend/
+
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier
+        entry: pnpm exec prettier --write
+        language: system
+        files: \.(ts|tsx|js|jsx|json|md|yaml|yml|css)$
+        exclude: ^(pnpm-lock\.yaml|apps/backend/)

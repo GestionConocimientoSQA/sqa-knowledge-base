@@ -1,0 +1,173 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ===== SQA Brand palette (from Lineamientos de Marca SQA v1.0) ===== */
+    --sqa-azul-claro: 204 67% 62%;
+    --sqa-azul-medio-claro: 202 100% 43%;
+    --sqa-azul-medio: 211 100% 36%;
+    --sqa-azul-oscuro: 212 100% 14%;
+    --sqa-azul-corp: 222 96% 25%;
+    --sqa-azul-bright: 225 100% 33%;
+    --sqa-ink: 231 65% 9%;
+    --sqa-naranja: 36 97% 53%;
+    --sqa-naranja-soft: 41 100% 63%;
+    --sqa-amarillo: 40 96% 64%;
+
+    /* ===== App tokens (light) ===== */
+    --color-background: 220 30% 97%;
+    --color-card: 0 0% 100%;
+    --color-foreground: 225 47% 12%;
+    --color-muted: 220 25% 95%;
+    --color-muted-foreground: 222 16% 44%;
+    --color-border: 219 30% 91%;
+    --color-input: 219 30% 91%;
+    --color-ring: var(--sqa-azul-bright);
+
+    --color-brand-primary: var(--sqa-azul-bright);
+    --color-brand-primary-foreground: 0 0% 100%;
+    --color-brand-accent: var(--sqa-naranja);
+
+    /* States */
+    --color-success: 158 75% 37%;
+    --color-warning: 32 92% 41%;
+    --color-error: 351 67% 54%;
+    --color-info: var(--sqa-azul-medio-claro);
+
+    /* Domain */
+    --color-authoritative: 158 75% 35%;
+    --color-anonymized: 220 40% 50%;
+    --color-score-high: 142 65% 45%;
+    --color-score-medium: 38 85% 50%;
+    --color-score-low: 0 70% 55%;
+
+    /* Folder categories (chips/badges) */
+    --color-cat-PROC: 210 80% 50%;
+    --color-cat-TEC: 180 70% 45%;
+    --color-cat-ARQ: 270 60% 50%;
+    --color-cat-HERR: 30 85% 50%;
+    --color-cat-NEG: 340 70% 50%;
+    --color-cat-ENV: 160 60% 40%;
+    --color-cat-EST: 250 60% 55%;
+    --color-cat-CONT: 0 0% 45%;
+
+    /* Typography (validate against sqa-brand) */
+    --font-display: "Exo 2", "Montserrat", system-ui, sans-serif;
+    --font-body: "Montserrat", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+
+    /* Radii */
+    --radius-sm: 4px;
+    --radius: 8px;
+    --radius-lg: 12px;
+
+    /* Layout */
+    --topbar-h: 60px;
+    --sidebar-w: 248px;
+    --sidebar-w-collapsed: 64px;
+    --page-max: 1440px;
+  }
+
+  .dark {
+    --color-background: 231 50% 7%;
+    --color-card: 222 38% 11%;
+    --color-foreground: 210 25% 95%;
+    --color-muted: 222 30% 14%;
+    --color-muted-foreground: 220 15% 70%;
+    --color-border: 222 25% 18%;
+    --color-input: 222 25% 18%;
+    --color-ring: var(--sqa-naranja);
+    --color-brand-primary: var(--sqa-naranja);
+    --color-brand-primary-foreground: 231 65% 9%;
+  }
+
+  * {
+    @apply border-border;
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-display tracking-tight;
+  }
+}
+
+/* === Brand hexagon (corporate motif) === */
+@layer utilities {
+  .hex-clip {
+    clip-path: polygon(
+      25% 6.7%,
+      75% 6.7%,
+      100% 50%,
+      75% 93.3%,
+      25% 93.3%,
+      0% 50%
+    );
+  }
+  .hex-clip-flat {
+    clip-path: polygon(
+      50% 0%,
+      95% 25%,
+      95% 75%,
+      50% 100%,
+      5% 75%,
+      5% 25%
+    );
+  }
+  .eyebrow {
+    @apply text-[11px] font-display font-bold uppercase tracking-[0.12em] text-muted-foreground;
+  }
+  .mono {
+    @apply font-mono text-xs rounded-sm px-1.5 py-0.5;
+    background: hsl(var(--sqa-azul-claro) / 0.12);
+    color: hsl(var(--color-foreground));
+  }
+}
+
+/* === Scrollbars === */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--color-border));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--color-muted-foreground));
+  background-clip: padding-box;
+}
+
+::selection {
+  background: hsl(var(--sqa-naranja) / 0.28);
+  color: hsl(var(--color-foreground));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,33 @@
+name: Infra Validate (Bicep)
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra-validate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+
+jobs:
+  validate:
+    name: Bicep build + lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [dev, staging, prod]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bicep CLI
+        run: |
+          curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+          chmod +x bicep
+          sudo mv bicep /usr/local/bin/
+
+      - name: Bicep build
+        run: bicep build infra/main.bicep
+
+      - name: Bicep lint
+        run: bicep lint infra/main.bicep

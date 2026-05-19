@@ -1,0 +1,61 @@
+name: Backend CI
+
+on:
+  pull_request:
+    paths:
+      - "apps/backend/**"
+      - ".github/workflows/backend-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/backend/**"
+
+jobs:
+  ci:
+    name: Lint · Typecheck · Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/backend
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: sqa
+          POSTGRES_PASSWORD: sqa_test_password
+          POSTGRES_DB: sqa_kb_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sqa -d sqa_kb_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff (lint + format check)
+        run: ruff check .
+
+      - name: Mypy (strict en domain/ y agent/)
+        run: mypy src/sqa_kb || true # gate en Fase 10
+        continue-on-error: true
+
+      - name: Pytest
+        run: pytest -q --cov=sqa_kb --cov-report=term-missing
+        env:
+          DATABASE_URL: postgresql+asyncpg://sqa:sqa_test_password@localhost:5432/sqa_kb_test
+          SQA_KB_APP_ENV: test

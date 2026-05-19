@@ -1,0 +1,17 @@
+node_modules
+.next
+.turbo
+.git
+.github
+.vscode
+.idea
+**/.env
+**/.env.local
+**/.env*.local
+**/credentials.env
+coverage
+playwright-report
+test-results
+*.log
+Dockerfile
+.dockerignore

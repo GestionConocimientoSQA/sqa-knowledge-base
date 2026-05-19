@@ -1,0 +1,107 @@
+name: Build and Push to Azure Container Registry
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "App a buildear"
+        required: true
+        type: choice
+        options: [frontend, backend, both]
+        default: both
+
+env:
+  REGISTRY: ${{ vars.AZURE_ACR_NAME }}.azurecr.io
+  IMAGE_FRONTEND: sqa-kb/frontend
+  IMAGE_BACKEND: sqa-kb/backend
+
+jobs:
+  preflight:
+    name: Preflight (validar secrets)
+    runs-on: ubuntu-latest
+    outputs:
+      acr_configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        run: |
+          if [ -z "${{ vars.AZURE_ACR_NAME }}" ]; then
+            echo "AZURE_ACR_NAME no configurado. Skipping push."
+            echo "configured=false" >> $GITHUB_OUTPUT
+          else
+            echo "configured=true" >> $GITHUB_OUTPUT
+          fi
+
+  build-frontend:
+    name: Build & Push frontend → ACR
+    needs: preflight
+    if: needs.preflight.outputs.acr_configured == 'true' && (inputs.app == 'frontend' || inputs.app == 'both' || github.event_name != 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        run: az acr login --name ${{ vars.AZURE_ACR_NAME }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}:buildcache,mode=max
+
+  build-backend:
+    name: Build & Push backend → ACR
+    needs: preflight
+    if: needs.preflight.outputs.acr_configured == 'true' && (inputs.app == 'backend' || inputs.app == 'both' || github.event_name != 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        run: az acr login --name ${{ vars.AZURE_ACR_NAME }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/backend
+          file: apps/backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:buildcache,mode=max

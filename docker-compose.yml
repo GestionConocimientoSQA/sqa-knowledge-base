@@ -1,0 +1,74 @@
+# ============================================================
+# SQA Knowledge Base — Stack local de desarrollo
+# ============================================================
+# Levanta solo dependencias (DB, Blob, Redis). Backend y frontend corren
+# fuera del compose con `uv run` y `pnpm dev` para iteración rápida.
+#
+# Uso:
+#   docker compose up -d           # arranca todo en background
+#   docker compose down            # detiene
+#   docker compose down -v         # detiene + borra volúmenes (DB limpia)
+#   docker compose logs -f postgres
+# ============================================================
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: sqa-kb-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sqa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sqa_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-sqa_kb}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/seed/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sqa} -d ${POSTGRES_DB:-sqa_kb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    container_name: sqa-kb-azurite
+    restart: unless-stopped
+    command:
+      - "azurite"
+      - "--blobHost"
+      - "0.0.0.0"
+      - "--queueHost"
+      - "0.0.0.0"
+      - "--tableHost"
+      - "0.0.0.0"
+      - "--location"
+      - "/data"
+      - "--skipApiVersionCheck"
+    ports:
+      - "10000:10000" # Blob
+      - "10001:10001" # Queue
+      - "10002:10002" # Table
+    volumes:
+      - azurite-data:/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: sqa-kb-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres-data:
+  azurite-data:
+  redis-data:

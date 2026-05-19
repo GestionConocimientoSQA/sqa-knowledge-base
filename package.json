@@ -1,0 +1,15 @@
+{
+  "name": "sqa-knowledge-base",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev:frontend": "pnpm --filter @sqa/frontend dev",
+    "build:frontend": "pnpm --filter @sqa/frontend build",
+    "test:frontend": "pnpm --filter @sqa/frontend test",
+    "lint:frontend": "pnpm --filter @sqa/frontend lint"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

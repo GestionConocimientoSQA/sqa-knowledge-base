@@ -1,0 +1,56 @@
+name: Frontend CI
+
+on:
+  pull_request:
+    paths:
+      - "apps/frontend/**"
+      - "packages/**"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".github/workflows/frontend-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/frontend/**"
+      - "packages/**"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ci:
+    name: Lint · Typecheck · Test · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm --filter @sqa/frontend typecheck
+
+      - name: Lint
+        run: pnpm --filter @sqa/frontend lint
+        continue-on-error: true # ESLint config aún en setup; activar gate en Fase 10
+
+      - name: Test (Vitest)
+        run: pnpm --filter @sqa/frontend test
+
+      - name: Build
+        run: pnpm --filter @sqa/frontend build
+        env:
+          NEXT_BUILD_STANDALONE: "true" # imagen Docker para Container Apps
