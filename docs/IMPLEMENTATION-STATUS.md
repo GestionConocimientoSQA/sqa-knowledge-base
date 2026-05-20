@@ -11,8 +11,8 @@
 | Timeline estimado total | 16-20 semanas |
 | Fases totales | 12 (Fase 0 a Fase 11) |
 | Fases completadas | **3** (Fase 0 + Fase 5 + Fase 6) |
-| Fase actual | **Fase 7 — sub-fases 7.1 + 7.2 + 7.3 ✅** (branch `fase-7-explorer-dashboard`) |
-| Próxima sub-fase | 7.4 — Dashboard interactivo (charts + auto-refresh) |
+| Fase actual | **Fase 7 — sub-fases 7.1 + 7.2 + 7.3 + 7.4 ✅** (branch `fase-7-explorer-dashboard`) |
+| Próxima sub-fase | 7.5 — `/my-captures` (vista personal del Capturador) |
 | Bloqueo externo | Fase 1 (backend) espera App Registration en Entra ID por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI esqueleto ✓ · Infra Bicep esqueleto ✓ |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
@@ -772,15 +772,30 @@ Explorador de conocimiento con filtros + dashboard interactivo de métricas. Sig
 
 ### Sub-fase 7.4 · Dashboard interactivo
 
-**Estado:** ⬜ Pendiente
+**Estado:** ✅ Completada · 2026-05-20
 
-- ⬜ `DocsByCategoryChart` (recharts pie)
-- ⬜ `ValueScoreDistribution` (recharts bar)
-- ⬜ `RecentActivityFeed` con tipos visuales
-- ⬜ `HotTopicsPanel` con marca visual de gaps
-- ⬜ Auto-refresh 5 min con TanStack Query (`refetchInterval`)
-- ⬜ Variantes por rol: GK Lead global, Owner filtrado a `carpetas_owned`, Capturador ve `MyCapturesPanel`
-- ⬜ Tests: charts con dataset vacío, refetchInterval setup
+- ✅ `components/dashboard/docs-by-category-chart.tsx` — recharts `PieChart` con paleta SQA estable por carpeta, tooltip personalizado con `autoritativos` + `scoreAvg`, role="img" + aria-label.
+- ✅ `components/dashboard/value-score-distribution.tsx` — `BarChart` con buckets 1.0-1.9 / 2.0-2.9 / 3.0-3.9 / 4.0-4.9 / 5.0; tone `low/mid/high` por color; `buildBuckets` exportado para tests sin recharts.
+- ✅ `components/dashboard/hot-topics-panel.tsx` — top temas en demanda 30 días con badge "Gap" destacado para `isGap=true` (señal visual de KB faltante).
+- ✅ `components/dashboard/recent-activity-feed.tsx` — timeline con icono + tono por tipo (`captura`/`ingesta`/`consulta`/`taxonomia`), tiempo relativo con `date-fns` locale `es`, link al recurso cuando hay `refUrl`.
+- ✅ `components/dashboard/my-captures-summary.tsx` — variante reducida para Capturador (4 StatCards + CTA a `/my-captures`), empty state cuando aún no capturó.
+- ✅ Refactor `app/(app)/dashboard/page.tsx` con **variantes por rol** según [[project-roles-capacidades]]:
+  - Capturador (`isAdmin=false`) → `CapturadorDashboard`: stats personales + feed reducido. No expone KPIs globales.
+  - Owner / GK Lead (`isAdmin=true`) → `AdminDashboard`: KPIs globales, 2 charts, hot topics + activity, grid de salud por carpeta.
+- ✅ **Auto-refresh 5 min** con `refetchInterval: 5 * 60 * 1000` en todos los queries del dashboard. Constante `FIVE_MINUTES_MS` con nombre explícito.
+
+**Decisiones de diseño:**
+- En Fase 7 el `isAdmin` boolean alcanza para gatear las variantes. En Fase 1 (con permisos finos por carpeta) Owner verá `AdminDashboard` filtrado a sus `carpetas_owned`, GK Lead lo verá completo. La separación cliente queda lista; el filtrado fino se agrega cuando el contrato lo permita.
+- `MyCapturesSummary` empty state linkea a `/chat?mode=captura` — el camino más corto para que un Capturador sin docs se ponga en marcha.
+- recharts es la dependencia más pesada del frontend; el dashboard pasa de 2.82 kB a 112 kB. Sigue muy por debajo del objetivo <500 kB del ROADMAP §17.
+
+**Tests por sub-fase 7.4:**
+
+| Archivo | Tests | Cubre |
+|---|---|---|
+| `tests/unit/value-score-distribution.test.ts` | 4 | `buildBuckets` puro: array vacío → todos en 0, clasificación correcta en límites de bucket, asignación de tone low/mid/high, orden estable |
+| `tests/unit/hot-topics-panel.test.tsx` | 4 | loading skeletons en lugar de lista, empty state, render de queries y citaciones, badge "Gap" sólo en `isGap=true` |
+| `tests/unit/recent-activity-feed.test.tsx` | 6 | loading skeletons, empty state, items con summary + actor, link sólo cuando `refUrl`, label correcto por tipo, atributo `<time datetime>` |
 
 ### Sub-fase 7.5 · `/my-captures`
 
