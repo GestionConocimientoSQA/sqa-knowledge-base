@@ -634,17 +634,41 @@ apps/frontend/src/
 - ✅ Sesiones se pueden pausar y reanudar sin pérdida de estado (persistencia localStorage)
 - ✅ Attachments se cargan con progress simulado, validación de mime + tamaño
 - ✅ Stage indicator refleja correctamente el progreso (con fix de hidratación F5)
+- ✅ **Set de tests por sub-fase listado explícitamente y ejecutado** — pase retroactivo cerrado según [[feedback-tests-por-fase]] (directiva 2026-05-19); 98 tests, 12 archivos
+- ⏳ **Smoke E2E manual en browser (Claude in Chrome)** — pendiente
 - ✅ Pendientes diferidos a Fase 10 (E2E con Playwright) y Fase 2 (SSE real con Last-Event-ID)
+
+## Tests · cobertura por sub-fase
+
+Mapeo de qué archivo de test cubre qué de cada sub-fase. La directiva 2026-05-19 ("tests por fase listados en DoD") se aplica retroactivamente a Fase 6 — esta sección es la fuente de verdad de cobertura.
+
+| Sub-fase | Archivo de test | Cubre |
+|---|---|---|
+| 6.1 Contratos | `tests/unit/stream-reducer.test.ts` (15) | reducer puro: cada uno de los 14 eventos SSE + acciones cliente (user-send, cancel, hydrate, reset); derivación de `currentStage` al hidratar |
+| 6.1 Contratos | `tests/unit/mock-transport.test.ts` (7) | scripts de modo A/B/C, orden de stages 0→5 en captura, kb-search en consulta, IDs monotónicos, abort signal |
+| 6.1 Contratos | `tests/unit/sessions-api.test.ts` (12) | CRUD de sesiones, `saveMessages` + sync de `messageCount`/`currentStage`/`updatedAt`, `restoreSession`, `getMessages` |
+| 6.2 Selector | `tests/unit/mode-copy.test.ts` (5) | `ORDERED_MODES`, integridad de `MODE_COPY`, letras únicas A/B/C, guard `isSessionMode` con casos negativos |
+| 6.3 UI estática | `tests/unit/composer.test.tsx` (3) | regresión "chip remove no submitea form", submit gated por whitespace, submit válido con texto |
+| 6.3 UI estática | `tests/unit/message-bubble.test.tsx` (10) | render Markdown, links externos con `target="_blank"` + `rel="noopener noreferrer nofollow"`, gating de footer tokenUsage por `showTokenUsage` (no leak a Capturador), subcomponentes (clasificación, citas, scoring, artifacts), panel de error |
+| 6.3 UI estática | `tests/unit/stage-indicator.test.tsx` (7) | stepper 0-5 en modo A con `aria-current="step"`, pill C/I en modos B/I, labels de etapa |
+| 6.3 UI estática | `tests/unit/attachment-chip.test.tsx` (7) | render por status (uploading/uploaded/error), `type="button"` del X (regresión submit), botón deshabilitado durante uploading |
+| 6.4 Streaming | `tests/unit/use-chat-stream.test.tsx` (10) | hook completo: send/cancel/reset/retry, propagación de attachmentIds, hidratación con derivación de `currentStage`, transport throwing → status error, retry sin send previo es no-op |
+| 6.5 Persistencia | `tests/unit/sessions-api.test.ts` (incluido en 6.1) | persistencia mensajes, undo via restoreSession, `deleteSession` purga messages + attachments |
+| 6.5 Sidebar | _(falta cobertura específica)_ | filters + history panel se validan en smoke E2E |
+| 6.6 Attachments | `tests/unit/attachments.test.ts` (8) | upload con progress monotónico, validación mime + tamaño, scoping por sesión, remove, abort |
+| 6.6 Files helpers | `tests/unit/files.test.ts` (10) | `formatBytes` (B/KB/MB), `extensionFromFilename` lowercase + edge cases, `iconForFile` mapping completo |
+| 6.6 Auth stub | `tests/unit/auth-stub.test.ts` (4) | signIn persiste, isAdmin correcto, signOut limpia, getCurrentUser sin sesión |
 
 ## Validación final
 
 | Check | Resultado |
 |---|---|
 | `pnpm typecheck` | ✅ 0 errores |
-| `pnpm test` | ✅ **49/49** (Vitest + RTL) |
+| `pnpm test` | ✅ **98/98** (Vitest + RTL) — pase retroactivo cerrado: 49 → 64 (helpers + mode-copy) → 98 (use-chat-stream, attachment-chip, stage-indicator, message-bubble) según [[feedback-tests-por-fase]] |
 | `pnpm build` | ✅ 10/10 páginas · `/chat/[sessionId]` 62.6 kB · 105 kB shared (muy debajo del objetivo < 500 kB del ROADMAP §17) |
 | Smoke HTTP rutas chat | ✅ 200 en `/chat`, `/chat?mode=*`, `/chat/<uuid>` |
 | Validación visual usuario | ✅ flujo captura A · consulta B · ingesta C · attachments · preview |
+| Smoke E2E con browser | ⏳ pendiente — Claude in Chrome |
 
 ## Pendientes diferidos (intencional)
 
