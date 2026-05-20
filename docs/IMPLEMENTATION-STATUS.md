@@ -11,8 +11,8 @@
 | Timeline estimado total | 16-20 semanas |
 | Fases totales | 12 (Fase 0 a Fase 11) |
 | Fases completadas | **3** (Fase 0 + Fase 5 + Fase 6) |
-| Fase actual | **Fase 7 — sub-fase 7.1 ✅** (branch `fase-7-explorer-dashboard`) |
-| Próxima sub-fase | 7.2 — Explorer con filtros + URL state |
+| Fase actual | **Fase 7 — sub-fases 7.1 + 7.2 ✅** (branch `fase-7-explorer-dashboard`) |
+| Próxima sub-fase | 7.3 — Detalle `/explorer/[docId]` |
 | Bloqueo externo | Fase 1 (backend) espera App Registration en Entra ID por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI esqueleto ✓ · Infra Bicep esqueleto ✓ |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
@@ -723,14 +723,33 @@ Explorador de conocimiento con filtros + dashboard interactivo de métricas. Sig
 
 ### Sub-fase 7.2 · Explorer con filtros + URL state
 
-**Estado:** ⬜ Pendiente
+**Estado:** ✅ Completada · 2026-05-20
 
-- ⬜ `useExplorerFilters` hook (URL ↔ state, parse/serialize de query params)
-- ⬜ `FilterBar` (categorías multi, tipos multi, autoritativo toggle, rango fecha, minScore slider)
-- ⬜ `SearchInput` con `useDebouncedValue` (300ms)
-- ⬜ Paginación con URL `?page=N&limit=20`
-- ⬜ Empty states diferenciados (sin resultados vs sin docs)
-- ⬜ Tests: filtros serialization, debounce wiring, paginación
+- ✅ `lib/hooks/use-explorer-filters.ts` — hook + `parseExplorerSearchParams` / `serializeExplorerSearchParams` (puros, exportados aparte para tests sin React/Next). Mutaciones de filtros/sort/query resetean `page=1`; setPage no. `URLSearchParams` round-trip estable.
+- ✅ `countActiveFilters` helper (cuenta dateFrom+dateTo como un solo "rango").
+- ✅ `components/explorer/search-input.tsx` — input controlado por valor inmediato, propagación con `useDebouncedValue` (300ms), sincronización descendente con `value` prop sin re-emitir, botón X de clear.
+- ✅ `components/explorer/filter-bar.tsx` — chips toggleables para carpetas (8), tipos (11), estados (4). `TriStateToggle` para autoritativo + anonimizado. Slider score (1.0 = sin filtrar). Sort selector. Contador + botón Limpiar.
+- ✅ `components/explorer/filter-chip.tsx` — chip toggle accesible con `aria-pressed`.
+- ✅ `components/explorer/pagination.tsx` — prev/next con clamping defensivo, `aria-live` para anuncios, rango visible.
+- ✅ `components/explorer/document-card.tsx` — extraído del page para reuso en `/my-captures` (7.5). Muestra badge de estado cuando no es vigente.
+- ✅ Refactor `app/(app)/explorer/page.tsx` — TanStack Query con `placeholderData: (prev) => prev` (no flicker al cambiar filtros), 3 estados (loading skeletons, error, empty-con-filtros vs empty-sin-docs), `aria-live` en el contador de resultados.
+
+**Decisiones de diseño cerradas:**
+- URL como única fuente de verdad — el hook usa `router.replace(..., { scroll: false })` para no romper scroll del usuario al cambiar filtros.
+- Multi-select serializado como comma-separated (`?carpetas=TEC,ARQ`) — más legible que array notation, fácil de validar.
+- Booleanos como `?auth=1`/`?auth=0` — más cortos que `true/false` en URL.
+- Parser validador-tolerante: valores inválidos (categoría inexistente, sort desconocido, page negativo) se ignoran silenciosamente sin romper la página.
+- `setPage` NO resetea filtros (solo paginación); cualquier cambio de filtros SÍ resetea page=1.
+- Limite máximo de `limit` = 100 en parser (defensa contra URLs maliciosas).
+
+**Tests por sub-fase 7.2:**
+
+| Archivo | Tests | Cubre |
+|---|---|---|
+| `tests/unit/use-explorer-filters.test.ts` | 24 | parser (query/listas/tri-state/score-range/dates/sort/page+limit con validación), serializer (vacío→qs vacía, omite defaults, comma-joined), 3 round-trips (parse→serialize→parse estable), countActiveFilters |
+| `tests/unit/search-input.test.tsx` | 6 | valor inicial sin emit, debounce wiring, rapid typing → único emit, clear button → emite "", sincronización descendente sin re-emit |
+| `tests/unit/filter-bar.test.tsx` | 10 | aria-pressed por chip, toggle de carpeta agrega/quita, contador visible/oculto, tri-state Todos/Sí/No, slider score 1.0=undefined, sort selector dispara onSortChange con value o undefined |
+| `tests/unit/pagination.test.tsx` | 7 | rango de items, disabled en extremos, navegación prev/next, total=0 estado, clamping defensivo |
 
 ### Sub-fase 7.3 · Detalle `/explorer/[docId]`
 
