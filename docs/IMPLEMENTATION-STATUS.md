@@ -10,9 +10,9 @@
 |---|---|
 | Timeline estimado total | 16-20 semanas |
 | Fases totales | 12 (Fase 0 a Fase 11) |
-| Fases completadas | **3** (Fase 0 + Fase 5 + Fase 6) |
-| Fase actual | **Fase 7 — sub-fases 7.1 + 7.2 + 7.3 + 7.4 + 7.5 ✅** (branch `fase-7-explorer-dashboard`) |
-| Próxima sub-fase | 7.6 — Smoke E2E + cierre Fase 7 |
+| Fases completadas | **4** (Fase 0 + Fase 5 + Fase 6 + Fase 7) |
+| Fase actual | **Fase 7 ✅ completa** (branch `fase-7-explorer-dashboard`, listo para merge) |
+| Próxima fase | Fase 1 — Backend (bloqueada por TI: App Registration en Entra ID) |
 | Bloqueo externo | Fase 1 (backend) espera App Registration en Entra ID por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI esqueleto ✓ · Infra Bicep esqueleto ✓ |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
@@ -28,7 +28,7 @@
 | 4 | Backend · Generación y extracción de docs | 9-10 | ⬜ Pendiente | 0% |
 | **5** | **Frontend · Fundación (UI + auth stub)** | **11-12** | **✅ Completada** | **100%** |
 | **6** | **Frontend · Chat streaming SSE (con mock-transport)** | **13-14** | **✅ Completada** | **100%** |
-| **7** | **Frontend · Explorer + Dashboard interactivo** | **15** | **🔄 En curso** (sub-fase 7.1 ✅) | **~15%** |
+| **7** | **Frontend · Explorer + Dashboard interactivo** | **15** | **✅ Completada** | **100%** |
 | 8 | Frontend · Cola de ingesta | 16 | ⬜ Pendiente | 0% |
 | 9 | Frontend · Admin (usuarios, taxonomía, skills, audit) | 17 | ⬜ Pendiente | 0% |
 | 10 | Hardening (perf + a11y + security review) | 18-19 | ⬜ Pendiente | parcial (security headers, gitleaks, audits stubs) |
@@ -691,7 +691,7 @@ Mapeo de qué archivo de test cubre qué de cada sub-fase. La directiva 2026-05-
 
 # Fase 7 · Frontend · Explorer y Dashboard
 
-**Estado:** 🔄 En curso · branch `fase-7-explorer-dashboard` · **Semana roadmap:** 15
+**Estado:** ✅ Completada · branch `fase-7-explorer-dashboard` · **Semana roadmap:** 15 · **Validada:** 2026-05-20
 
 ## Objetivo
 
@@ -813,11 +813,27 @@ Explorador de conocimiento con filtros + dashboard interactivo de métricas. Sig
 
 ### Sub-fase 7.6 · Smoke E2E + commit final
 
-**Estado:** ⬜ Pendiente
+**Estado:** ✅ Completada · 2026-05-20
 
-### Sub-fase 7.6 · Smoke E2E + commit final
+Smoke E2E manual (Claude in Chrome) — flujo completo validado en branch `fase-7-explorer-dashboard`:
 
-**Estado:** ⬜ Pendiente
+| Verificación | Resultado |
+|---|---|
+| Explorer carga 45 docs con FilterBar completo (Carpeta 8 + Tipo 11 + Estado 4 + tri-state x2 + score range + sort) | ✅ |
+| Click filtros carpeta TEC + tipo MTEC → URL `?carpetas=TEC&tipos=MTEC`, 5 resultados, contador "2 filtros activos" | ✅ |
+| Search "playwright" + filtros activos → URL `?q=playwright&carpetas=TEC&tipos=MTEC`, 1 resultado, debounce funcionando | ✅ |
+| Click en DocumentCard → `/explorer/[docId]` con breadcrumb + badges + preview placeholder + resumen ejecutivo | ✅ |
+| **Capturador ve solo `Descargar`** en ActionsBar (NO "Marcar autoritativo") — gating por rol según [[project-roles-capacidades]] | ✅ |
+| IncomingCitationsPanel sidebar muestra "Citado por (1)" con la cita real desde `PROC-revision-codigo` | ✅ |
+| Logout → login como GK Lead → dashboard con 6 KPIs globales, PieChart y BarChart visibles | ✅ |
+| HotTopicsPanel muestra "Gap" en "Mobile native testing" (queries=38, citaciones=3) | ✅ |
+| RecentActivityFeed con iconos + tono por tipo + tiempo relativo en es | ✅ |
+| Grid "Salud por carpeta temática" con 8 cards | ✅ |
+| **Capturador ve "Resumen personal"** (sin KPIs globales) — variante por rol | ✅ |
+| `/my-captures` con `MyCapturesSummary` + grid con empty state correcto cuando user oid no matchea autores mock | ✅ |
+| Consola del browser limpia (los 5 errores son ruido del MCP extension `listener indicated async response…`, no de la app) | ✅ |
+
+**Fase 7 cerrada** — branch `fase-7-explorer-dashboard` listo para merge a `master`.
 
 ## Definition of Done
 
