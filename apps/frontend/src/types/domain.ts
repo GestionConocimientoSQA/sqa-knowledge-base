@@ -81,6 +81,8 @@ export interface DocumentItem {
   autoritativo: boolean;
   estado: DocStatus;
   autor: string;
+  /** Entra Object ID del autor; en Fase 1 se llena del JWT. */
+  autorOid?: string;
   rol: string;
   fecha: string;
   revision: string;
@@ -94,6 +96,122 @@ export interface DocumentItem {
   aprobador?: string;
   fechaAprobacion?: string;
   tags: string[];
+}
+
+// === Detalle de documento (Explorer 7.3) ===
+
+/**
+ * Citación recibida por un documento desde otra pieza del KB.
+ * El backend Fase 3 (RAG) la genera al indexar; este shape es el contrato
+ * que el endpoint `GET /documents/{id}` debe respetar.
+ */
+export interface IncomingCitation {
+  sourceDocId: string;
+  sourceTitle: string;
+  sourceFolder: CategoryCode;
+  section: string;
+  snippet: string;
+  /** ISO date de cuándo se registró la citación (al indexar el doc origen). */
+  citedAt: string;
+}
+
+export interface DocumentDetail extends DocumentItem {
+  /** Citaciones recibidas desde otros docs del KB. */
+  incomingCitations: IncomingCitation[];
+  /** Resumen ejecutivo del doc (primer párrafo del content). */
+  resumen: string;
+}
+
+// === Búsqueda y filtros (Explorer 7.2) ===
+
+export type DocumentSortBy =
+  | "relevance"
+  | "date_desc"
+  | "score_desc"
+  | "citations_desc";
+
+/**
+ * Filtros del catálogo. Todos opcionales — `undefined` significa "no filtrar".
+ * Listas vacías (`[]`) también significan "no filtrar" (alias semántico).
+ * El contrato es estable: el backend Fase 1 lo recibe como query params.
+ */
+export interface DocumentSearchFilters {
+  carpetas?: CategoryCode[];
+  tipos?: DocTypeCode[];
+  estados?: DocStatus[];
+  autoritativo?: boolean;
+  anonimizado?: boolean;
+  /** Score mínimo inclusivo (escala 1.0–5.0). */
+  minScore?: number;
+  /** ISO date (YYYY-MM-DD). Filtra `fecha >= dateFrom`. */
+  dateFrom?: string;
+  /** ISO date (YYYY-MM-DD). Filtra `fecha <= dateTo`. */
+  dateTo?: string;
+  /** Filtra por `autorOid` exacto — usado por `/my-captures`. */
+  autorOid?: string;
+}
+
+export interface DocumentSearchParams {
+  /** Texto libre. Backend Fase 3 lo resuelve con hybrid search. */
+  query?: string;
+  filters?: DocumentSearchFilters;
+  page?: number;
+  limit?: number;
+  sortBy?: DocumentSortBy;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+// === Dashboard interactivo (7.4) ===
+
+/**
+ * Tema "caliente" del KB: alta demanda de consulta. Si `isGap=true` el tema
+ * tiene queries pero pocas/ninguna citación → señal de contenido faltante.
+ * Lo genera el backend Fase 1 con queries agregadas; en Fase 3 mejora con
+ * clustering vectorial.
+ */
+export interface HotTopic {
+  topic: string;
+  queries30d: number;
+  citationCount: number;
+  isGap: boolean;
+}
+
+export type RecentActivityType =
+  | "captura"
+  | "ingesta"
+  | "consulta"
+  | "taxonomia";
+
+export interface RecentActivityItem {
+  id: string;
+  type: RecentActivityType;
+  actor: { oid: string; name: string };
+  at: string;
+  summary: string;
+  /** Deep-link opcional al recurso afectado (doc, sesión, taxonomía). */
+  refUrl?: string;
+}
+
+// === My captures (7.5) ===
+
+export interface MyCapturesStats {
+  totalCaptures: number;
+  totalCitationsReceived: number;
+  avgScore: number;
+  /** ISO date de la última captura del usuario, o null si nunca capturó. */
+  lastCapturedAt: string | null;
+}
+
+export interface MyCapturesResult {
+  items: DocumentItem[];
+  stats: MyCapturesStats;
 }
 
 // === Modo de sesión ===

@@ -11,8 +11,9 @@
 | Timeline estimado total | 16-20 semanas |
 | Fases totales | 12 (Fase 0 a Fase 11) |
 | Fases completadas | **3** (Fase 0 + Fase 5 + Fase 6) |
-| Fase actual | — (en pausa entre fases) |
-| Próxima fase | Fase 1 — Backend: Persistencia y Auth (desbloquea Fases 2-4) |
+| Fase actual | **Fase 7 — sub-fase 7.1 ✅** (branch `fase-7-explorer-dashboard`) |
+| Próxima sub-fase | 7.2 — Explorer con filtros + URL state |
+| Bloqueo externo | Fase 1 (backend) espera App Registration en Entra ID por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI esqueleto ✓ · Infra Bicep esqueleto ✓ |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
 
@@ -21,13 +22,13 @@
 | Fase | Bloque | Semanas roadmap | Estado | Cobertura |
 |---|---|---|---|---|
 | 0 | Fundación (monorepo + infra + Azure) | 1 | ✅ Completada | 100% |
-| 1 | Backend · Persistencia + Auth Entra ID | 2-3 | ⬜ Pendiente | 0% |
+| 1 | Backend · Persistencia + Auth Entra ID | 2-3 | ⬜ Pendiente (bloqueada por TI: App Registration) | 0% |
 | 2 | Backend · Agente LangGraph (ETAPAS) | 4-6 | ⬜ Pendiente | 0% |
 | 3 | Backend · RAG vectorial | 7-8 | ⬜ Pendiente | 0% |
 | 4 | Backend · Generación y extracción de docs | 9-10 | ⬜ Pendiente | 0% |
 | **5** | **Frontend · Fundación (UI + auth stub)** | **11-12** | **✅ Completada** | **100%** |
 | **6** | **Frontend · Chat streaming SSE (con mock-transport)** | **13-14** | **✅ Completada** | **100%** |
-| 7 | Frontend · Explorer + Dashboard interactivo | 15 | ⬜ Pendiente | 0% (esqueleto en Fase 5) |
+| **7** | **Frontend · Explorer + Dashboard interactivo** | **15** | **🔄 En curso** (sub-fase 7.1 ✅) | **~15%** |
 | 8 | Frontend · Cola de ingesta | 16 | ⬜ Pendiente | 0% |
 | 9 | Frontend · Admin (usuarios, taxonomía, skills, audit) | 17 | ⬜ Pendiente | 0% |
 | 10 | Hardening (perf + a11y + security review) | 18-19 | ⬜ Pendiente | parcial (security headers, gitleaks, audits stubs) |
@@ -690,38 +691,93 @@ Mapeo de qué archivo de test cubre qué de cada sub-fase. La directiva 2026-05-
 
 # Fase 7 · Frontend · Explorer y Dashboard
 
-**Estado:** ⬜ Pendiente (esqueleto creado en Fase 5) · **Semana roadmap:** 15
+**Estado:** 🔄 En curso · branch `fase-7-explorer-dashboard` · **Semana roadmap:** 15
 
 ## Objetivo
 
-Explorador de conocimiento con filtros + dashboard interactivo de métricas para GK Lead.
+Explorador de conocimiento con filtros + dashboard interactivo de métricas. Sigue el mismo patrón que Fase 6: implementación contra mocks-stub con interfaz idéntica al backend Fase 1/3 — swap mock→real es cambio de implementación, no de contrato (DIP).
 
-## Tareas planificadas
+## Sub-fases
 
-- ⬜ `/explorer` con filtros (categoría, tipo, origen, autoritativo, fecha)
-- ⬜ Barra de búsqueda con debounce
-- ⬜ `DocumentCard` con badges (scoring, autoritativo, anonimizado)
-- ⬜ `/explorer/[docId]` con preview + metadata + citaciones recibidas
-- ⬜ `/dashboard` enriquecido:
-  - StatCards (ya existen Fase 5)
-  - `DocsByCategoryChart` (recharts pie)
-  - `ValueScoreDistribution` (recharts bar)
-  - `RecentActivity` feed
-  - `HotTopics` (consultas más frecuentes + gaps)
-- ⬜ `/my-captures` (documentos del usuario actual)
-- ⬜ Filtros con URL state (compartible)
-- ⬜ Auto-refresh cada 5 min con TanStack Query
+### Sub-fase 7.1 · Contratos + mocks ampliados
+
+**Estado:** ✅ Completada · 2026-05-20
+
+- ✅ `types/domain.ts` ampliado: `DocumentSearchFilters`, `DocumentSearchParams`, `PaginatedResult<T>`, `DocumentSortBy`, `DocumentDetail` con `incomingCitations` + `resumen`, `IncomingCitation`, `HotTopic`, `RecentActivityItem` + `RecentActivityType`, `MyCapturesStats`, `MyCapturesResult`. Campo `autorOid` agregado a `DocumentItem` (preparado para `WHERE author_oid = ?` en Fase 1).
+- ✅ Mocks expandidos (`lib/mocks/data.ts`): 45 docs distribuidos por carpeta proporcional a `FOLDERS`, fechas distribuidas últimos 12 meses, mezcla autoritativos/anonimizados, 8 autores con `AUTHOR_OIDS` estables. Estados variados (vigente, generado, en-revision, obsoleto). 8 `MOCK_HOT_TOPICS` (incluye `isGap=true` en 3), 12 `MOCK_RECENT_ACTIVITY` cronológicos, 3 docs con `INCOMING_CITATIONS` y `DOCUMENT_RESUMES` para validar `getDocumentDetail`.
+- ✅ `lib/api/documents.ts` extendido: `searchDocuments(params)` con filtros (carpetas, tipos, estados, autoritativo, anonimizado, minScore, dateFrom/dateTo, autorOid), sort enum (`relevance | date_desc | score_desc | citations_desc`), paginación offset-based (`{page, limit, total, hasMore}`); `getDocumentDetail(id)`, `listHotTopics({limit?})`, `listRecentActivity({limit?, since?})`, `listMyCaptures(ownerOid)`. Mantiene `listDocuments`, `listCategories`, `getDocument` por compat con esqueleto Fase 5.
+- ✅ `lib/hooks/use-debounced-value.ts` — hook genérico `<T>` con cleanup de timer en unmount/cambio.
+
+**Decisiones de contrato cerradas** (afectan diseño backend Fase 1):
+- Paginación **offset-based** (`{page, limit}`) en vez de cursor. PostgreSQL `LIMIT/OFFSET` es suficiente para el tamaño esperado del catálogo; cursor sería overengineering hoy.
+- Filtros opcionales (`undefined` o `[]` = "no filtrar"). Listas vacías son alias semántico para mantener serialización limpia a query params en Fase 2.
+- Sort por defecto: `relevance` si hay `query`, `date_desc` en otro caso.
+- `searchDocuments` no abstrae `DocumentRepository` interface — un solo consumidor (la UI) no justifica la abstracción todavía.
+
+**Tests por sub-fase 7.1:**
+
+| Archivo | Tests | Cubre |
+|---|---|---|
+| `tests/unit/documents-api.test.ts` | 35 | listas base, searchDocuments (filtros simples + combinados, paginación sin overlap, sort variants, query case-insensitive, listas vacías como no-filtro, hasMore), getDocumentDetail (con/sin citations, null), listHotTopics (limit, gap detection), listRecentActivity (orden desc, since, limit), listMyCaptures (scoping por `autorOid`, stats consistentes, orden por fecha) |
+| `tests/unit/use-debounced-value.test.tsx` | 6 | valor inicial sync, no actualiza antes del delay, actualiza al delay, reset del timer en cambios consecutivos, tipos genéricos, cleanup en unmount |
+
+### Sub-fase 7.2 · Explorer con filtros + URL state
+
+**Estado:** ⬜ Pendiente
+
+- ⬜ `useExplorerFilters` hook (URL ↔ state, parse/serialize de query params)
+- ⬜ `FilterBar` (categorías multi, tipos multi, autoritativo toggle, rango fecha, minScore slider)
+- ⬜ `SearchInput` con `useDebouncedValue` (300ms)
+- ⬜ Paginación con URL `?page=N&limit=20`
+- ⬜ Empty states diferenciados (sin resultados vs sin docs)
+- ⬜ Tests: filtros serialization, debounce wiring, paginación
+
+### Sub-fase 7.3 · Detalle `/explorer/[docId]`
+
+**Estado:** ⬜ Pendiente
+
+- ⬜ Layout: header con metadata + breadcrumb, panel central con resumen y preview placeholder (real en Fase 4), sidebar con `incomingCitations`
+- ⬜ Acciones admin (marcar autoritativo, etc.) gateadas por rol según [[project-roles-capacidades]]
+- ⬜ `not-found.tsx` para id inválido
+- ⬜ Tests: render con datos, gating admin
+
+### Sub-fase 7.4 · Dashboard interactivo
+
+**Estado:** ⬜ Pendiente
+
+- ⬜ `DocsByCategoryChart` (recharts pie)
+- ⬜ `ValueScoreDistribution` (recharts bar)
+- ⬜ `RecentActivityFeed` con tipos visuales
+- ⬜ `HotTopicsPanel` con marca visual de gaps
+- ⬜ Auto-refresh 5 min con TanStack Query (`refetchInterval`)
+- ⬜ Variantes por rol: GK Lead global, Owner filtrado a `carpetas_owned`, Capturador ve `MyCapturesPanel`
+- ⬜ Tests: charts con dataset vacío, refetchInterval setup
+
+### Sub-fase 7.5 · `/my-captures`
+
+**Estado:** ⬜ Pendiente
+
+- ⬜ Vista personal con `listMyCaptures(currentUser.oid)` (items + stats)
+- ⬜ Reusa `DocumentCard` del Explorer
+- ⬜ Empty state "Aún no capturaste nada"
+- ⬜ Tests: filtrado por ownerOid, stats correctas
+
+### Sub-fase 7.6 · Smoke E2E + commit final
+
+**Estado:** ⬜ Pendiente
 
 ## Definition of Done
 
-- Filtros funcionan con URL state compartible
+- Filtros funcionan con URL state compartible (refresh F5 mantiene estado)
 - Dashboard se refresca automáticamente cada 5 min
-- Preview de documentos funciona inline sin descargar
+- Preview de documentos funciona inline sin descargar (placeholder hasta Fase 4)
 - Charts responsive y accesibles
+- Tests por sub-fase listados explícitamente en la tabla de arriba
+- Smoke E2E (Claude in Chrome) con flujo: buscar → filtrar → detalle → dashboard
 
 ## Dependencias
 
-- Backend Fase 1 (endpoints `GET /documents/search` con filtros)
+- Backend Fase 1 (endpoints `GET /documents/search` con filtros) — bloqueante para producción, no para Fase 7 (mocks-stub)
 - Backend Fase 3 (búsqueda vectorial para search-as-you-type opcional)
 
 ---
