@@ -11,8 +11,8 @@
 | Timeline estimado total | 16-20 semanas |
 | Fases totales | 12 (Fase 0 a Fase 11) |
 | Fases completadas | **3** (Fase 0 + Fase 5 + Fase 6) |
-| Fase actual | **Fase 7 — sub-fases 7.1 + 7.2 + 7.3 + 7.4 ✅** (branch `fase-7-explorer-dashboard`) |
-| Próxima sub-fase | 7.5 — `/my-captures` (vista personal del Capturador) |
+| Fase actual | **Fase 7 — sub-fases 7.1 + 7.2 + 7.3 + 7.4 + 7.5 ✅** (branch `fase-7-explorer-dashboard`) |
+| Próxima sub-fase | 7.6 — Smoke E2E + cierre Fase 7 |
 | Bloqueo externo | Fase 1 (backend) espera App Registration en Entra ID por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI esqueleto ✓ · Infra Bicep esqueleto ✓ |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
@@ -799,12 +799,21 @@ Explorador de conocimiento con filtros + dashboard interactivo de métricas. Sig
 
 ### Sub-fase 7.5 · `/my-captures`
 
-**Estado:** ⬜ Pendiente
+**Estado:** ✅ Completada · 2026-05-20
 
-- ⬜ Vista personal con `listMyCaptures(currentUser.oid)` (items + stats)
-- ⬜ Reusa `DocumentCard` del Explorer
-- ⬜ Empty state "Aún no capturaste nada"
-- ⬜ Tests: filtrado por ownerOid, stats correctas
+- ✅ `app/(app)/my-captures/page.tsx` — consume `listMyCaptures(user.oid)`. Layout: `MyCapturesSummary` (KPIs personales) + grid de `DocumentCard` (reutilizado del Explorer). Empty state con CTA a `/chat?mode=captura`. Skeletons durante carga.
+- ✅ Link en sidebar grupo "CONOCIMIENTO" con ícono `BookUser`. Visible para todos los roles — un Owner o GK Lead que capturó usa la misma vista.
+- ✅ `enabled: Boolean(user?.oid)` en el query — evita request con `null` durante el primer render antes de que `useAuth` resuelva.
+
+**Tests por sub-fase 7.5:**
+
+| Archivo | Tests | Cubre |
+|---|---|---|
+| `tests/unit/my-captures-summary.test.tsx` | 5 | loading con 4 skeletons, stats undefined sin loading → no render, totalCaptures=0 CTA al chat, datos completos con los 4 StatCards + link a /my-captures, lastCapturedAt=null → placeholder "—" |
+
+### Sub-fase 7.6 · Smoke E2E + commit final
+
+**Estado:** ⬜ Pendiente
 
 ### Sub-fase 7.6 · Smoke E2E + commit final
 

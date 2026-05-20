@@ -9,6 +9,7 @@ import {
   SearchCode,
   Inbox,
   LibraryBig,
+  BookUser,
   Settings2,
   Settings,
   type LucideIcon,
@@ -67,6 +68,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "CONOCIMIENTO",
     items: [
       { id: "explorer", label: "Catálogo", icon: LibraryBig, href: "/explorer" },
+      { id: "my-captures", label: "Mis capturas", icon: BookUser, href: "/my-captures" },
     ],
   },
   {
