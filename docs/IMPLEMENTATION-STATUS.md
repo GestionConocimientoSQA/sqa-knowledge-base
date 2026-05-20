@@ -11,8 +11,8 @@
 | Timeline estimado total | 16-20 semanas |
 | Fases totales | 12 (Fase 0 a Fase 11) |
 | Fases completadas | **3** (Fase 0 + Fase 5 + Fase 6) |
-| Fase actual | **Fase 7 — sub-fases 7.1 + 7.2 ✅** (branch `fase-7-explorer-dashboard`) |
-| Próxima sub-fase | 7.3 — Detalle `/explorer/[docId]` |
+| Fase actual | **Fase 7 — sub-fases 7.1 + 7.2 + 7.3 ✅** (branch `fase-7-explorer-dashboard`) |
+| Próxima sub-fase | 7.4 — Dashboard interactivo (charts + auto-refresh) |
 | Bloqueo externo | Fase 1 (backend) espera App Registration en Entra ID por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI esqueleto ✓ · Infra Bicep esqueleto ✓ |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
@@ -753,12 +753,22 @@ Explorador de conocimiento con filtros + dashboard interactivo de métricas. Sig
 
 ### Sub-fase 7.3 · Detalle `/explorer/[docId]`
 
-**Estado:** ⬜ Pendiente
+**Estado:** ✅ Completada · 2026-05-20
 
-- ⬜ Layout: header con metadata + breadcrumb, panel central con resumen y preview placeholder (real en Fase 4), sidebar con `incomingCitations`
-- ⬜ Acciones admin (marcar autoritativo, etc.) gateadas por rol según [[project-roles-capacidades]]
-- ⬜ `not-found.tsx` para id inválido
-- ⬜ Tests: render con datos, gating admin
+- ✅ `app/(app)/explorer/[docId]/page.tsx` — layout 2-cols `1fr_360px`: panel central (preview placeholder + meta) + sidebar (incoming citations). Breadcrumb con link al catálogo. Estados: loading skeletons, error con retry, doc no encontrado con CTA al catálogo, render completo.
+- ✅ `app/(app)/explorer/[docId]/not-found.tsx` para fallbacks de `notFound()` futuros.
+- ✅ `components/explorer/document-preview-placeholder.tsx` — placeholder visual con resumen ejecutivo (Fase 4 reemplaza con viewer DOCX/PDF real).
+- ✅ `components/explorer/document-meta-panel.tsx` — definition list con autor, versión, fechas, aprobador, formato, score + citas. Tags como badges. Campos opcionales (`aprobador`) se ocultan si no están.
+- ✅ `components/explorer/incoming-citations-panel.tsx` — sidebar con citas recibidas (cada item: badge carpeta, sección, título del origen, blockquote del snippet, fecha de citación). Empty state si no hay. Cada citación es link al detalle del doc origen.
+- ✅ `components/explorer/document-actions-bar.tsx` — `Descargar` para todos; `Marcar autoritativo` / `Quitar autoritativo` solo para `isAdmin` según [[project-roles-capacidades]]. Capturador ve sólo Descargar.
+
+**Tests por sub-fase 7.3:**
+
+| Archivo | Tests | Cubre |
+|---|---|---|
+| `tests/unit/document-actions-bar.test.tsx` | 6 | Capturador sólo Descargar, Owner/GK Lead ven ambas, doc autoritativo muestra "Quitar", user=null oculta acciones admin, callbacks dispararon valor next state correcto |
+| `tests/unit/document-meta-panel.test.tsx` | 6 | autor+rol+versión+fecha+formato, score con un decimal + citas, aprobador renderea si existe, oculta sección aprobador sin datos, tags como badges, sección tags oculta si lista vacía |
+| `tests/unit/incoming-citations-panel.test.tsx` | 3 | empty state con lista vacía, una citación con link al origen + snippet + sección, múltiples con badge del total y `<li>` count correcto |
 
 ### Sub-fase 7.4 · Dashboard interactivo
 
