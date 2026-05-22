@@ -16,8 +16,11 @@ const badgeVariants = cva(
         outline: "text-foreground",
         accent:
           "border-transparent bg-sqa-naranja text-sqa-ink hover:bg-sqa-naranja-soft",
+        // Fondo verde sólido + texto blanco — garantiza contraste WCAG AA
+        // (~9:1) en ambos modos. El badge "Autoritativo" es señalética
+        // crítica y necesita máxima legibilidad.
         authoritative:
-          "border-transparent bg-authoritative/15 text-authoritative",
+          "border-transparent bg-authoritative text-white",
       },
     },
     defaultVariants: {

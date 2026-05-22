@@ -30,14 +30,14 @@
     --color-brand-primary-foreground: 0 0% 100%;
     --color-brand-accent: var(--sqa-naranja);
 
-    /* States */
-    --color-success: 158 75% 37%;
-    --color-warning: 32 92% 41%;
-    --color-error: 351 67% 54%;
+    /* States — luminancias ajustadas para WCAG AA sobre fondo blanco (contraste >= 4.5:1) */
+    --color-success: 158 80% 28%;
+    --color-warning: 32 92% 32%;
+    --color-error: 351 70% 42%;
     --color-info: var(--sqa-azul-medio-claro);
 
     /* Domain */
-    --color-authoritative: 158 75% 35%;
+    --color-authoritative: 158 80% 26%;
     --color-anonymized: 220 40% 50%;
     --color-score-high: 142 65% 45%;
     --color-score-medium: 38 85% 50%;
@@ -81,6 +81,11 @@
     --color-ring: var(--sqa-naranja);
     --color-brand-primary: var(--sqa-naranja);
     --color-brand-primary-foreground: 231 65% 9%;
+    /* En dark mode los estados se aclaran para mantener contraste sobre el fondo oscuro */
+    --color-success: 158 70% 55%;
+    --color-warning: 32 90% 60%;
+    --color-error: 351 80% 65%;
+    --color-authoritative: 158 70% 55%;
   }
 
   * {
