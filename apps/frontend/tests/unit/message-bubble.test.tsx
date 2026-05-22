@@ -29,33 +29,37 @@ function makeAgentMessage(partial: Partial<AgentMessage> = {}): AgentMessage {
 }
 
 describe("MessageBubble", () => {
-  it("renderiza Markdown básico (párrafo, bold, lista)", () => {
+  // MessageContent (que renderiza Markdown) es dynamic-imported por
+  // next/dynamic para code-splitting. En jsdom hay un tick async hasta
+  // que el componente carga — usamos `findBy*` (async) para esperar.
+
+  it("renderiza Markdown básico (párrafo, bold, lista)", async () => {
     const message = makeAgentMessage({
       content: "**Hola** Aria\n\n- uno\n- dos",
     });
     renderBubble(<MessageBubble message={message} />);
-    expect(screen.getByText("Hola")).toBeInTheDocument();
+    expect(await screen.findByText("Hola")).toBeInTheDocument();
     expect(screen.getByText("uno")).toBeInTheDocument();
     expect(screen.getByText("dos")).toBeInTheDocument();
   });
 
-  it("links externos abren en nueva pestaña con rel='noopener noreferrer nofollow'", () => {
+  it("links externos abren en nueva pestaña con rel='noopener noreferrer nofollow'", async () => {
     const message = makeAgentMessage({
       content: "Ver [docs](https://example.com/policy)",
     });
     renderBubble(<MessageBubble message={message} />);
-    const link = screen.getByRole("link", { name: "docs" });
+    const link = await screen.findByRole("link", { name: "docs" });
     expect(link.getAttribute("href")).toBe("https://example.com/policy");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer nofollow");
   });
 
-  it("links relativos no abren en nueva pestaña ni agregan rel", () => {
+  it("links relativos no abren en nueva pestaña ni agregan rel", async () => {
     const message = makeAgentMessage({
       content: "Ver [interna](/explorer/doc-1)",
     });
     renderBubble(<MessageBubble message={message} />);
-    const link = screen.getByRole("link", { name: "interna" });
+    const link = await screen.findByRole("link", { name: "interna" });
     expect(link.getAttribute("href")).toBe("/explorer/doc-1");
     expect(link.getAttribute("target")).toBeNull();
     expect(link.getAttribute("rel")).toBeNull();

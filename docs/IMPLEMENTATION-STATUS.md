@@ -11,7 +11,7 @@
 | Timeline estimado total | 16-20 semanas |
 | Fases totales | 12 (Fase 0 a Fase 11) |
 | Fases completadas | **4** (Fase 0 + Fase 5 + Fase 6 + Fase 7) |
-| Fase actual | **Fase 10A ✅** (hardening parcial · branch `fase-10-hardening-parcial`) |
+| Fase actual | **Fases 10A + 10B ✅** (hardening parcial + extra · branch `fase-10-hardening-extra`) |
 | Próxima fase | Fase 1 — Backend (bloqueada por TI: App Registration en Entra ID + decisiones de stack) |
 | Bloqueo externo | Fase 1 (backend) espera App Registration en Entra ID por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI esqueleto ✓ · Infra Bicep esqueleto ✓ |
@@ -31,7 +31,7 @@
 | **7** | **Frontend · Explorer + Dashboard interactivo** | **15** | **✅ Completada** | **100%** |
 | 8 | Frontend · Cola de ingesta | 16 | ⬜ Pendiente | 0% |
 | 9 | Frontend · Admin (usuarios, taxonomía, skills, audit) | 17 | ⬜ Pendiente | 0% |
-| 10 | Hardening (perf + a11y + security review) | 18-19 | 🔄 Sub-fase 10A ✅ | E2E Playwright + axe a11y + CSP estricta + Lighthouse CI base; falta backend-side |
+| 10 | Hardening (perf + a11y + security review) | 18-19 | 🔄 Sub-fases 10A + 10B ✅ | E2E Playwright + axe a11y + CSP + Lighthouse CI + keyboard nav + i18n (es-CO/en-US) + code splitting; falta backend-side |
 | 11 | Migración legacy + paso a producción Azure | 20 | ⬜ Pendiente | parcial (Bicep esqueleto, OIDC workflow) |
 
 ---
@@ -982,6 +982,59 @@ Mientras esperamos respuestas de TI para arrancar el backend (Fase 1), se ejecut
 | `pnpm test:lighthouse` (en login) | ✅ Perf 99 · A11y 100 · BP 96 · SEO 100 |
 | `pnpm build` | ✅ build OK con CSP estricta aplicada |
 
+## Sub-fase 10B · Hardening extra frontend (sin TI)
+
+**Estado:** ✅ Completada · 2026-05-22
+
+Continuación de 10A con tres mejoras del frontend que NO requieren TI ni backend.
+
+### 10B.1 · Navegación por teclado completa
+
+- ✅ Skip-link al `<main id="main-content">` como primer focusable del layout (WCAG 2.4.1). Visualmente oculto hasta recibir focus.
+- ✅ `<main tabIndex={-1}>` permite focus programático desde el skip-link.
+- ✅ Radix Dialog (Sheet de preview) ya provee focus trap + escape — sin cambios necesarios.
+- ✅ `e2e/keyboard-nav.spec.ts` (8 specs): primer Tab muestra skip-link, Enter salta al main, tab order en FilterBar, Enter/Space activan chips, Tab desde composer (con texto) lleva a Enviar, Enter envía mensaje, focus-visible tiene box-shadow.
+
+### 10B.2 · i18n con next-intl (es-CO + en-US)
+
+- ✅ `next-intl@^3` + plugin en `next.config.mjs`.
+- ✅ `src/i18n/config.ts` — LOCALES, DEFAULT_LOCALE (es-CO), cookie name (NEXT_LOCALE), helpers.
+- ✅ `src/i18n/request.ts` — getRequestConfig server-side que lee cookie y carga messages.
+- ✅ `src/i18n/actions.ts` — server action `setLocale()` que persiste cookie + revalidatePath.
+- ✅ `messages/es-CO.json` + `en-US.json` con 5 namespaces (common, nav, topbar, login, roles) — ~50 keys.
+- ✅ `LanguageSwitcher` en topbar con dropdown, marca locale actual, useTransition para feedback.
+- ✅ Aplicado a: skip-link, sidebar (nav groups + items + activeAgent), topbar (aria-labels + logout), login (aria-label con interpolación).
+- ✅ `html[lang]` refleja el locale activo.
+- ✅ `e2e/i18n.spec.ts` (5 specs): default es-CO, switch a en-US traduce nav y topbar, cookie persiste post-F5, skip-link traducido, html[lang] cambia.
+
+**Nota:** las páginas pasaron de `static` a `dynamic` en build porque `getLocale()` lee cookies. El resto de las páginas (/explorer, /chat, /dashboard) por ahora usan strings hardcoded en español; el patrón next-intl está listo para migración incremental.
+
+### 10B.3 · Code splitting + lazy loading
+
+- ✅ `next/dynamic` aplicado a `DocsByCategoryChart` + `ValueScoreDistribution` (recharts ~80 kB lazy-loaded solo cuando admin entra al dashboard).
+- ✅ `MessageContent` extraído de `MessageBubble` a archivo propio para dynamic-import. react-markdown + remark-gfm (~30 kB) ya no entran en el bundle inicial del chat.
+- ✅ Skeletons como loading state mientras los chunks llegan.
+
+**Reducción de bundle medida:**
+
+| Ruta | Antes 10B.3 | Después 10B.3 | Δ |
+|---|---|---|---|
+| `/chat/[sessionId]` page bundle | 65.2 kB | **23 kB** | **-65%** |
+| `/chat/[sessionId]` First Load | 235 kB | **193 kB** | **-18%** |
+| `/dashboard` page bundle | 109 kB | **5.6 kB** | **-95%** |
+| `/dashboard` First Load | 252 kB | **149 kB** | **-41%** |
+
+Unit tests de `MessageBubble` ajustados a `findByText` async para esperar la hidratación del chunk dynamic.
+
+### Validación final 10B
+
+| Check | Resultado |
+|---|---|
+| `pnpm typecheck` | ✅ 0 errores |
+| `pnpm test` (Vitest unit) | ✅ **220/220** |
+| `pnpm test:e2e` | ✅ **53/53** (40 anteriores + 8 keyboard + 5 i18n) |
+| `pnpm build` | ✅ build OK con reducciones de bundle |
+
 ## Tareas restantes (Fase 10 completa)
 
 Estas tareas requieren backend ya en marcha (Fase 1+) o son optimizaciones post-deploy:
@@ -1008,7 +1061,7 @@ Estas tareas requieren backend ya en marcha (Fase 1+) o son optimizaciones post-
 ### Accesibilidad
 - ✅ Lighthouse score ≥ 90 (perf + a11y + best-practices) — **alcanzado en 10A.4**
 - ✅ axe-core en E2E — **integrado en 10A.2**
-- ⬜ Navegación por teclado completa (validación manual end-to-end)
+- ✅ Navegación por teclado completa — **integrado en 10B.1**
 
 ### Documentación
 - ⬜ ADRs finales (0002-pgvector → Azure SQL/AI Search según TI, 0003-container-apps, 0004-clean-arch, 0005-langgraph)
@@ -1016,15 +1069,8 @@ Estas tareas requieren backend ya en marcha (Fase 1+) o son optimizaciones post-
 - ⬜ Troubleshooting guides
 
 ### i18n
-- ⬜ es-CO (default) + en-US si aplica
-
-### Documentación
-- ⬜ ADRs finales (0002-pgvector, 0003-container-apps, 0004-clean-arch, 0005-langgraph)
-- ⬜ Runbooks operativos
-- ⬜ Troubleshooting guides
-
-### i18n
-- ⬜ es-CO (default) + en-US si aplica
+- ✅ es-CO (default) + en-US setup completo — **integrado en 10B.2**
+- ⬜ Migración incremental de strings hardcoded del resto de páginas (/explorer, /chat, /dashboard, /my-captures)
 
 ## Definition of Done
 

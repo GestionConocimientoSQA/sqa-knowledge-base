@@ -1,13 +1,12 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { PageContainer } from "@/components/shared/page-container";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { DocsByCategoryChart } from "@/components/dashboard/docs-by-category-chart";
-import { ValueScoreDistribution } from "@/components/dashboard/value-score-distribution";
 import { HotTopicsPanel } from "@/components/dashboard/hot-topics-panel";
 import { RecentActivityFeed } from "@/components/dashboard/recent-activity-feed";
 import { MyCapturesSummary } from "@/components/dashboard/my-captures-summary";
@@ -20,6 +19,34 @@ import {
 } from "@/lib/api/documents";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { GK_KPIS } from "@/lib/mocks/data";
+
+/**
+ * Charts dynamic-imported para sacar recharts (~80 kB) del bundle inicial.
+ * Solo se carga cuando el usuario aterriza en /dashboard como admin (los
+ * Capturadores ni siquiera bajan el chunk). El skeleton mantiene la
+ * altura del card mientras llega.
+ */
+const DocsByCategoryChart = dynamic(
+  () =>
+    import("@/components/dashboard/docs-by-category-chart").then(
+      (m) => m.DocsByCategoryChart,
+    ),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-72 w-full" />,
+  },
+);
+
+const ValueScoreDistribution = dynamic(
+  () =>
+    import("@/components/dashboard/value-score-distribution").then(
+      (m) => m.ValueScoreDistribution,
+    ),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-72 w-full" />,
+  },
+);
 
 /** 5 minutos en ms — usado como refetchInterval del dashboard. */
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
