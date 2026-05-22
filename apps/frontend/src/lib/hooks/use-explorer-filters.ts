@@ -294,6 +294,11 @@ export interface UseExplorerFiltersResult {
  * Cualquier mutación del estado resetea `page` a 1 EXCEPTO `setPage` mismo
  * — cambiar un filtro mientras estás en la página 5 te dejaría con una
  * página vacía y confusión.
+ *
+ * Importante: los setters leen el estado actual desde `window.location.search`
+ * (no del `params` capturado en el closure) para evitar perder cambios
+ * cuando se disparan dos mutaciones consecutivas más rápido que el ciclo
+ * de re-render del hook (caso típico: clicks rápidos en filter chips).
  */
 export function useExplorerFilters(): UseExplorerFiltersResult {
   const router = useRouter();
@@ -314,43 +319,61 @@ export function useExplorerFilters(): UseExplorerFiltersResult {
     [router, pathname],
   );
 
+  /**
+   * Lee el estado vigente directamente de la URL del browser. Evita el race
+   * condition del closure cuando dos mutaciones ocurren antes del próximo
+   * re-render: el segundo callback vería el `params` del primer render, no
+   * el `params` ya actualizado por el primer `push`.
+   */
+  const readLive = useCallback((): ExplorerSearchParams => {
+    if (typeof window === "undefined") return params;
+    return parseExplorerSearchParams(
+      new URLSearchParams(window.location.search),
+    );
+  }, [params]);
+
   const setQuery = useCallback(
     (query: string) => {
-      push({ ...params, query: query.trim(), page: 1 });
+      const live = readLive();
+      push({ ...live, query: query.trim(), page: 1 });
     },
-    [params, push],
+    [readLive, push],
   );
 
   const setFilters = useCallback(
     (filters: DocumentSearchFilters) => {
-      push({ ...params, filters, page: 1 });
+      const live = readLive();
+      push({ ...live, filters, page: 1 });
     },
-    [params, push],
+    [readLive, push],
   );
 
   const patchFilters = useCallback(
     (patch: Partial<DocumentSearchFilters>) => {
+      const live = readLive();
       push({
-        ...params,
-        filters: { ...params.filters, ...patch },
+        ...live,
+        filters: { ...live.filters, ...patch },
         page: 1,
       });
     },
-    [params, push],
+    [readLive, push],
   );
 
   const setPage = useCallback(
     (page: number) => {
-      push({ ...params, page: Math.max(1, page) });
+      const live = readLive();
+      push({ ...live, page: Math.max(1, page) });
     },
-    [params, push],
+    [readLive, push],
   );
 
   const setSort = useCallback(
     (sortBy: DocumentSortBy | undefined) => {
-      push({ ...params, sortBy, page: 1 });
+      const live = readLive();
+      push({ ...live, sortBy, page: 1 });
     },
-    [params, push],
+    [readLive, push],
   );
 
   const reset = useCallback(() => {
