@@ -11,8 +11,8 @@
 | Timeline estimado total | 16-20 semanas |
 | Fases totales | 12 (Fase 0 a Fase 11) |
 | Fases completadas | **4** (Fase 0 + Fase 5 + Fase 6 + Fase 7) |
-| Fase actual | **Fases 10A + 10B ✅** (hardening parcial + extra · branch `fase-10-hardening-extra`) |
-| Próxima fase | Fase 1 — Backend (bloqueada por TI: App Registration en Entra ID + decisiones de stack) |
+| Fase actual | **Fase 1A ✅** (backend base sin TI · branch `fase-1-backend-base`) |
+| Próxima sub-fase | 1B-local — persistencia + auth dev + LLM directo (despliegue local sin TI) |
 | Bloqueo externo | Fase 1 (backend) espera App Registration en Entra ID por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI esqueleto ✓ · Infra Bicep esqueleto ✓ |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
@@ -22,7 +22,7 @@
 | Fase | Bloque | Semanas roadmap | Estado | Cobertura |
 |---|---|---|---|---|
 | 0 | Fundación (monorepo + infra + Azure) | 1 | ✅ Completada | 100% |
-| 1 | Backend · Persistencia + Auth Entra ID | 2-3 | ⬜ Pendiente (bloqueada por TI: App Registration) | 0% |
+| 1 | Backend · Persistencia + Auth Entra ID | 2-3 | 🔄 Sub-fase 1A ✅ | Clean Architecture + domain + settings + logging + ports + tests (55) — sin DB ni auth real |
 | 2 | Backend · Agente LangGraph (ETAPAS) | 4-6 | ⬜ Pendiente | 0% |
 | 3 | Backend · RAG vectorial | 7-8 | ⬜ Pendiente | 0% |
 | 4 | Backend · Generación y extracción de docs | 9-10 | ⬜ Pendiente | 0% |
@@ -163,7 +163,80 @@ sqa-knowledge-base/
 
 # Fase 1 · Backend · Persistencia y Auth
 
-**Estado:** ⬜ Pendiente · **Semanas roadmap:** 2-3
+**Estado:** 🔄 Sub-fase 1A ✅ · branch `fase-1-backend-base` · **Semanas roadmap:** 2-3
+
+## Sub-fase 1A · Backend base sin TI
+
+**Estado:** ✅ Completada · 2026-05-22
+
+Toda la fundación del backend que NO depende de decisiones pendientes de TI (PostgreSQL vs Azure SQL, LiteLLM, Entra ID App Registration). Cuando TI desbloquee, solo se agregan adapters concretos — domain, services, ports y middleware no cambian.
+
+### 1A.1 · Estructura Clean Architecture
+
+- ✅ Paquetes `domain/` `ports/` `services/` `adapters/` `middleware/` `observability/` con `__init__.py` documentando el rol y la regla de imports (`domain ← nadie · services → domain · adapters → ports → domain · api → services → domain`).
+
+### 1A.2 · Domain models (Pydantic v2)
+
+- ✅ `domain/value_objects.py` — 9 enums (`CategoryCode`, `DocTypeCode`, `DocStatus`, `SessionMode`, `SessionStatus`, `MessageRole`, `MessageStatus`, `IngestionStatus`, `RoleId`, `ActivityType`) + `StageId` con `is_valid_stage()`.
+- ✅ `domain/entities.py` — 13 entidades: `User`, `Session`, `Message`, `Category`, `DocType`, `Document`, `DocumentDetail`, `CaptureScore`, `IncomingCitation`, `IngestionItem`, `Query`, `QueryCitation`, `Skill`, `AuditLog` + payloads de streaming (`CitationPayload`, `ClassificationPayload`, `ScoringPayload`, `TokenUsagePayload`, `DocumentArtifactPayload`) + dashboard (`HotTopic`, `RecentActivityItem`, `MyCapturesStats`). Mantiene paridad con frontend `types/domain.ts` y `types/agent.ts`.
+- ✅ `domain/errors.py` — 8 errores: `DomainError` raíz + `NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ValidationError`, `ConflictError`, `RateLimitedError`, `ExternalServiceError`.
+
+**Modelo de permisos** según [[project-roles-capacidades]]: `User` tiene `carpetas_owned`, `puede_gobernar_taxonomia`, `puede_aprobar_taxonomia`, `puede_ver_metricas_globales`. El `is_admin` property existe solo por compatibilidad con el frontend; los services usan los flags finos.
+
+### 1A.3 · Settings completo (Pydantic Settings)
+
+- ✅ `config.py` con env vars del proyecto: `app_env`, `database_dialect` (postgres/azure_sql), `database_url`, `entra_*`, `azure_blob_*`, `vector_store` (none/pgvector/azure_ai_search), `llm_gateway_kind` (anthropic_direct/litellm), `anthropic_api_key`, `litellm_base_url`, `presidio_*`, `log_*`, `redis_url`.
+- ✅ Helper `CsvList` con `BeforeValidator` + `NoDecode` — acepta CSV en env vars donde Pydantic Settings espera JSON.
+- ✅ Validadores por entorno: `staging`/`prod` exige `entra_tenant_id`, `entra_client_id`, `database_url`, `anthropic_api_key`. LiteLLM exige `litellm_base_url`. Si falta algo, falla en startup con mensaje claro.
+
+### 1A.4 · Logging structlog + middleware
+
+- ✅ `observability/logging.py` — structlog JSON en staging/prod, ConsoleRenderer en dev local (`log_json=false`). `ContextVar` para `request_id` que se inyecta en TODOS los logs dentro del lifecycle de una request.
+- ✅ `middleware/request_id.py` — `RequestIdMiddleware` (ASGI BaseHTTPMiddleware). Genera UUID4 si no viene del request o usa el incoming `X-Request-ID` (truncado a 128 chars como defensa). Setea `request.state.request_id` + context var. Responde con `X-Request-ID` siempre. CORS lo expone al frontend (Fase 5 ya lo lee).
+- ✅ `middleware/error_handler.py` — `register_error_handlers(app)` mapea `DomainError` → HTTP con payload `{error: {code, message, request_id, ...}}`. Status codes: 404 / 401 / 403 / 422 / 409 / 429 / 503 / 500 según el subtipo. `RateLimitedError` agrega header `Retry-After`. Exceptions no-tipadas → 500 sin filtrar el mensaje interno al cliente.
+- ✅ `main.py` actualizado: factory que configura logging primero, monta middlewares en orden correcto, registra handlers, incluye routers.
+
+### 1A.5 · Health checks ampliados
+
+- ✅ `api/health.py` con 3 probes (live/startup/ready) + sistema de `HealthCheck` inyectables. `register_health_check(check)` agrega verificadores al pool global; `/health/ready` los corre en paralelo y devuelve 503 con detalle por check si alguno falla. Exception en un check se captura como `unhealthy` con `detail`.
+
+### 1A.6 · Interfaces (puertos hexagonales)
+
+- ✅ `ports/repositories.py` — `UserRepository`, `SessionRepository`, `DocumentRepository`, `IngestionRepository`, `QueryRepository`, `TaxonomyRepository`, `SkillRepository`, `AuditLogRepository`, `ActivityRepository`. Todas como `Protocol` `runtime_checkable`. Las operaciones sobre `Session` y `Document` reciben `caller_oid` y el repo enforce ownership por [[project-security-idor-check]].
+- ✅ `ports/gateways.py` — `TokenValidator` (Entra ID JWT o dev provider), `LlmGateway` (Anthropic directo o LiteLLM proxy) con `complete` + `stream`, `BlobStorage`, `PiiFilter` (Presidio opcional), `EmailSender` (Azure Comm. Services), `HealthCheck`. Dataclasses inmutables para inputs/outputs.
+
+### 1A.7 · Tests pytest
+
+- ✅ `tests/conftest.py` — fixture `_isolated_env` (autouse) que limpia `SQA_KB_*` y fija `app_env=test`. Reset del cache singleton de `get_settings` entre tests.
+- ✅ `tests/test_health.py` (7) — los 3 probes, ready sin checks, ready con check healthy, 503 cuando falla, 503 cuando un check tira excepción.
+- ✅ `tests/test_config.py` (8) — defaults dev, CSV parsing, prod requiere Entra+DB+Anthropic, LiteLLM requiere base_url, dev permite secrets vacíos, `is_local` correcto.
+- ✅ `tests/test_domain.py` (28) — `is_valid_stage` happy + parametrize negativo, enums exhaustivos, User.is_admin por rol, carpetas_owned, validaciones Pydantic, slug de Document forzado por regex, errores carry-along.
+- ✅ `tests/test_middleware.py` (12) — `X-Request-ID` auto-genera/propaga/trunca/independiente, 7 mapeos `DomainError`→HTTP, `Retry-After` en 429, `service` en 503, 500 no filtra mensaje interno, payload incluye request_id.
+
+**Validación:** `pytest -q` → **55/55 passed** en 1s. Resultado agregado a `docs/test-reports/test-runs.xlsx`.
+
+## Pendiente (sub-fase 1B-local)
+
+Despliegue local completo SIN depender de TI — `docker-compose up` + backend + frontend conectado. Cuando TI habilite, solo cambian env vars:
+
+- ⬜ **1B.1** Alembic + adapter PostgreSQL (`adapters/repositories/postgres/`) — SQLAlchemy 2.0 async + asyncpg + pgvector. Schema inicial + seeds.
+- ⬜ **1B.2** Dev auth provider (`adapters/auth/dev.py`) — acepta tokens fake del frontend stub MSAL solo si `app_env ∈ {dev, test}`.
+- ⬜ **1B.3** Adapter Blob → Azurite (`adapters/blob/azure.py`) — `azure-storage-blob`.
+- ⬜ **1B.4** Adapter LLM → Anthropic directo (`adapters/llm/anthropic_direct.py`) con la key personal de `credentials.env`.
+- ⬜ **1B.5** Endpoints CRUD básicos: `/auth/me`, `/users`, `/documents`, `/categories`.
+- ⬜ **1B.6** Conectar frontend al backend real (swap `lib/api/*` mocks por fetch al `:8000`).
+- ⬜ **1B.7** Tests integración + STATUS + merge.
+
+## Pendiente (sub-fase 1B-azure)
+
+Cuando TI confirme:
+
+- ⬜ Adapter `entra` para `TokenValidator` (JWKS cache 1h TTL, validación de claims `aud`, `iss`, `exp`, `oid`).
+- ⬜ Adapter `azure_sql` para repositorios (si TI elige Azure SQL en vez de PostgreSQL).
+- ⬜ Adapter `litellm` para `LlmGateway` (si TI provee proxy managed).
+- ⬜ Vista materializada `mv_dashboard_stats` (Postgres) o equivalente.
+
+
 
 ## Objetivo
 

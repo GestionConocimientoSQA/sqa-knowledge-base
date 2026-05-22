@@ -80,6 +80,41 @@ function summarizeVitest(jsonPath) {
 }
 
 /**
+ * Resumen desde un JUnit XML (pytest --junitxml=...).
+ * Lee el atributo `tests/failures/errors/skipped/time` del root `<testsuites>`
+ * o del primer `<testsuite>`.
+ */
+function summarizeJUnit(xmlPath) {
+  const xml = readFileSync(xmlPath, "utf8");
+  // pytest emite `<testsuites><testsuite ...>...</testsuite></testsuites>`.
+  // Los atributos (tests/failures/errors/skipped/time) viven en `<testsuite>`,
+  // no siempre en `<testsuites>`. Buscamos primero el `<testsuite>` con esos
+  // atributos; si falla, fallback al `<testsuites>`.
+  const tagWithStats = xml.match(/<testsuite\b[^>]*\btests="\d+"[^>]*>/);
+  const root = tagWithStats ?? xml.match(/<testsuites\b[^>]*>/);
+  if (!root) {
+    throw new Error(`No se encontró <testsuite>/<testsuites> en ${xmlPath}`);
+  }
+  const attrs = root[0];
+  const num = (re) => {
+    const m = attrs.match(re);
+    return m ? Number(m[1]) : 0;
+  };
+  const tests = num(/\btests="(\d+)"/);
+  const failures = num(/\bfailures="(\d+)"/);
+  const errors = num(/\berrors="(\d+)"/);
+  const skipped = num(/\bskipped="(\d+)"/);
+  const time = num(/\btime="([\d.]+)"/);
+  const passed = Math.max(0, tests - failures - errors - skipped);
+  return {
+    total: tests,
+    passed,
+    failed: failures + errors,
+    duration: +time.toFixed(2),
+  };
+}
+
+/**
  * Resumen desde el JSON de Playwright (`--reporter=json`).
  * Estructura: { stats: { expected, unexpected, skipped, flaky, duration }, suites: [...] }
  */
@@ -154,6 +189,8 @@ async function main() {
     metrics = summarizeVitest(resolve(REPO_ROOT, args["from-vitest"]));
   } else if (args["from-playwright"]) {
     metrics = summarizePlaywright(resolve(REPO_ROOT, args["from-playwright"]));
+  } else if (args["from-junit"]) {
+    metrics = summarizeJUnit(resolve(REPO_ROOT, args["from-junit"]));
   } else {
     metrics = {
       total: Number(args.total ?? 0),

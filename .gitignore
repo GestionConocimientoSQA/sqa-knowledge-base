@@ -31,3 +31,4 @@ test-results/
 # scripts/append-test-report.mjs. El xlsx final SÍ se commitea (docs/test-reports/).
 apps/*/.test-run.json
 apps/*/.e2e-run.json
+apps/*/.pytest-run.xml
