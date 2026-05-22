@@ -62,8 +62,11 @@ export function ModeSelectorCard({
           <span
             className={cn(
               "rounded-full px-2 py-0.5 font-display text-[11px] font-extrabold tracking-[0.06em]",
+              // Fondo sólido + texto oscuro (~ink) garantiza WCAG AA con
+              // el naranja SQA (el variant con tint /15 + text-naranja no
+              // alcanza el contraste mínimo de 4.5:1).
               selected
-                ? "bg-sqa-naranja/15 text-sqa-naranja"
+                ? "bg-sqa-naranja text-sqa-ink"
                 : "bg-muted text-muted-foreground",
             )}
             aria-label={`Modo ${copy.letter}`}

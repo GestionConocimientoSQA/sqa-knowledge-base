@@ -33,12 +33,16 @@ describe("MessageBubble", () => {
   // next/dynamic para code-splitting. En jsdom hay un tick async hasta
   // que el componente carga — usamos `findBy*` (async) para esperar.
 
+  // findBy* con timeout extendido — bajo CPU saturada (ej: post-playwright),
+  // el dynamic chunk de MessageContent puede tardar > 1s en cargar en jsdom.
+  const FIND_TIMEOUT = { timeout: 5000 };
+
   it("renderiza Markdown básico (párrafo, bold, lista)", async () => {
     const message = makeAgentMessage({
       content: "**Hola** Aria\n\n- uno\n- dos",
     });
     renderBubble(<MessageBubble message={message} />);
-    expect(await screen.findByText("Hola")).toBeInTheDocument();
+    expect(await screen.findByText("Hola", undefined, FIND_TIMEOUT)).toBeInTheDocument();
     expect(screen.getByText("uno")).toBeInTheDocument();
     expect(screen.getByText("dos")).toBeInTheDocument();
   });
@@ -48,7 +52,7 @@ describe("MessageBubble", () => {
       content: "Ver [docs](https://example.com/policy)",
     });
     renderBubble(<MessageBubble message={message} />);
-    const link = await screen.findByRole("link", { name: "docs" });
+    const link = await screen.findByRole("link", { name: "docs" }, FIND_TIMEOUT);
     expect(link.getAttribute("href")).toBe("https://example.com/policy");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer nofollow");
@@ -59,7 +63,7 @@ describe("MessageBubble", () => {
       content: "Ver [interna](/explorer/doc-1)",
     });
     renderBubble(<MessageBubble message={message} />);
-    const link = await screen.findByRole("link", { name: "interna" });
+    const link = await screen.findByRole("link", { name: "interna" }, FIND_TIMEOUT);
     expect(link.getAttribute("href")).toBe("/explorer/doc-1");
     expect(link.getAttribute("target")).toBeNull();
     expect(link.getAttribute("rel")).toBeNull();

@@ -27,3 +27,7 @@ htmlcov/
 playwright-report/
 test-results/
 .lighthouseci/
+# Outputs intermedios de Vitest/Playwright en formato JSON consumidos por
+# scripts/append-test-report.mjs. El xlsx final SÍ se commitea (docs/test-reports/).
+apps/*/.test-run.json
+apps/*/.e2e-run.json

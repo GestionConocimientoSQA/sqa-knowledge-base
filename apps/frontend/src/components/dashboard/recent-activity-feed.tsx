@@ -68,7 +68,12 @@ export function RecentActivityFeed({
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="space-y-3" aria-label="Cargando actividad reciente">
+          <div
+            className="space-y-3"
+            role="status"
+            aria-live="polite"
+            aria-label="Cargando actividad reciente"
+          >
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-14 w-full" />
             ))}

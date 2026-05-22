@@ -28,7 +28,12 @@ export function HotTopicsPanel({ topics, isLoading }: HotTopicsPanelProps) {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="space-y-2" aria-label="Cargando temas en demanda">
+          <div
+            className="space-y-2"
+            role="status"
+            aria-live="polite"
+            aria-label="Cargando temas en demanda"
+          >
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-10 w-full" />
             ))}

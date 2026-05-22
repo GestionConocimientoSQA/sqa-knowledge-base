@@ -86,6 +86,29 @@ status
 
 (si configuramos un alias — ver más abajo).
 
+## Reportes de pruebas (xlsx)
+
+Cada corrida **completa** de pruebas (cierre de sub-fase, pre-commit a master, pre-merge) agrega una fila a `docs/test-reports/test-runs.xlsx`. NO se genera por cada `pnpm test` interno mientras se desarrolla.
+
+Cómo:
+
+```powershell
+# 1) Correr Vitest con reporter JSON
+pnpm --filter @sqa/frontend exec vitest run --reporter=json --outputFile=.test-run.json
+
+# 2) Correr Playwright con reporter JSON
+pnpm --filter @sqa/frontend exec playwright test --reporter=json 1> apps/frontend/.e2e-run.json 2>&1
+
+# 3) Agregar filas al xlsx
+node scripts/append-test-report.mjs --suite=unit --from-vitest=apps/frontend/.test-run.json --notes="<contexto>"
+node scripts/append-test-report.mjs --suite=e2e --from-playwright=apps/frontend/.e2e-run.json --notes="<contexto>"
+
+# Lighthouse u otras suites pueden agregarse manualmente:
+node scripts/append-test-report.mjs --suite=lighthouse --total=N --passed=N --failed=0 --notes="..."
+```
+
+Columnas: `fecha · branch · commit · suite · total · pasados · fallados · duración (s) · notas`. El xlsx se commitea; los JSON intermedios (`.test-run.json`, `.e2e-run.json`) están gitignored.
+
 ## Comandos frecuentes
 
 ```powershell
