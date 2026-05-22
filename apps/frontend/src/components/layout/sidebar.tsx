@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
   LayoutDashboard,
   Mic,
@@ -25,7 +26,8 @@ import { ROLES } from "@/lib/mocks/data";
 
 interface NavItem {
   id: string;
-  label: string;
+  /** Clave i18n bajo el namespace `nav`. */
+  labelKey: string;
   icon: LucideIcon;
   href: string;
   count?: number;
@@ -38,42 +40,43 @@ interface NavItem {
 }
 
 interface NavGroup {
-  label: string;
+  /** Clave i18n bajo el namespace `nav`. */
+  labelKey: string;
   items: NavItem[];
 }
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: "TRABAJO",
+    labelKey: "groupWork",
     items: [
-      { id: "dashboard", label: "Métricas", icon: LayoutDashboard, href: "/dashboard" },
+      { id: "dashboard", labelKey: "dashboard", icon: LayoutDashboard, href: "/dashboard" },
       {
         id: "chat-capture",
-        label: "Captura",
+        labelKey: "captura",
         icon: Mic,
         href: "/chat?mode=captura",
         activeWhen: (p, s) => p === "/chat" && s.get("mode") === "captura",
       },
       {
         id: "chat-consulta",
-        label: "Consulta",
+        labelKey: "consulta",
         icon: SearchCode,
         href: "/chat?mode=consulta",
         activeWhen: (p, s) => p === "/chat" && s.get("mode") === "consulta",
       },
-      { id: "ingestion", label: "Ingesta", icon: Inbox, href: "/ingestion", count: 4 },
+      { id: "ingestion", labelKey: "ingestion", icon: Inbox, href: "/ingestion", count: 4 },
     ],
   },
   {
-    label: "CONOCIMIENTO",
+    labelKey: "groupKnowledge",
     items: [
-      { id: "explorer", label: "Catálogo", icon: LibraryBig, href: "/explorer" },
-      { id: "my-captures", label: "Mis capturas", icon: BookUser, href: "/my-captures" },
+      { id: "explorer", labelKey: "explorer", icon: LibraryBig, href: "/explorer" },
+      { id: "my-captures", labelKey: "myCaptures", icon: BookUser, href: "/my-captures" },
     ],
   },
   {
-    label: "GOBIERNO",
-    items: [{ id: "admin", label: "Taxonomía y roles", icon: Settings2, href: "/admin" }],
+    labelKey: "groupGovernance",
+    items: [{ id: "admin", labelKey: "admin", icon: Settings2, href: "/admin" }],
   },
 ];
 
@@ -83,6 +86,7 @@ export function Sidebar() {
   const { user } = useAuth();
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const role = user ? ROLES[user.roleId] : null;
+  const tNav = useTranslations("nav");
 
   return (
     <aside
@@ -136,7 +140,7 @@ export function Sidebar() {
           <AriaMascot size={44} status="speaking" />
           <div className="min-w-0 flex-1">
             <div className="font-display text-[11px] font-bold uppercase tracking-[0.06em] text-white/60">
-              Agente activo
+              {tNav("activeAgent")}
             </div>
             <div className="text-[13px] font-bold text-white">Aria</div>
           </div>
@@ -147,10 +151,10 @@ export function Sidebar() {
       <nav className="relative z-10 flex-1 overflow-y-auto px-2 pb-4">
         {!collapsed && <SidebarSessions />}
         {NAV_GROUPS.map((group) => (
-          <div key={group.label} className="mb-[18px]">
+          <div key={group.labelKey} className="mb-[18px]">
             {!collapsed && (
               <div className="px-3 pb-2 pt-1 font-display text-[9.5px] font-extrabold uppercase tracking-[0.14em] text-white/60">
-                {group.label}
+                {tNav(group.labelKey)}
               </div>
             )}
             {group.items.map((item) => {
@@ -158,11 +162,12 @@ export function Sidebar() {
                 ? item.activeWhen(pathname, searchParams)
                 : pathname.startsWith(item.href);
               const Icon = item.icon;
+              const label = tNav(item.labelKey);
               return (
                 <Link
                   key={item.id}
                   href={item.href as never}
-                  title={collapsed ? item.label : undefined}
+                  title={collapsed ? label : undefined}
                   className={cn(
                     "relative my-0.5 flex items-center gap-3 rounded-[10px] font-display text-[13px] font-semibold transition-colors",
                     collapsed
@@ -179,7 +184,7 @@ export function Sidebar() {
                   <Icon className="h-[17px] w-[17px]" />
                   {!collapsed && (
                     <>
-                      <span className="flex-1 truncate">{item.label}</span>
+                      <span className="flex-1 truncate">{label}</span>
                       {item.count !== undefined && (
                         <span className="rounded-full bg-sqa-naranja px-1.5 py-[1px] text-[10px] font-black text-sqa-ink">
                           {item.count}
