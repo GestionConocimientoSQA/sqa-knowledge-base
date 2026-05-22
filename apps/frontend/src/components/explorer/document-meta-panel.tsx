@@ -29,17 +29,14 @@ export function DocumentMetaPanel({ document: d }: DocumentMetaPanelProps) {
         <CardTitle className="text-base">Metadata</CardTitle>
       </CardHeader>
       <CardContent>
+        {/*
+         * Cada MetaField es un <div> hijo directo del <dl> con un <dt> y <dd>
+         * adentro — axe acepta esa anidación (la regla permite <div> directos
+         * dentro de <dl>). NO se mete un div entre el group div y el <dt>.
+         */}
         <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
-          <MetaField
-            icon={User}
-            label="Autor"
-            value={`${d.autor} · ${d.rol}`}
-          />
-          <MetaField
-            icon={GitCommitVertical}
-            label="Versión"
-            value={`v${d.version}`}
-          />
+          <MetaField icon={User} label="Autor" value={`${d.autor} · ${d.rol}`} />
+          <MetaField icon={GitCommitVertical} label="Versión" value={`v${d.version}`} />
           <MetaField icon={CalendarDays} label="Fecha" value={d.fecha} />
           <MetaField icon={CalendarDays} label="Última revisión" value={d.revision} />
           {d.aprobador && (
@@ -91,15 +88,19 @@ interface MetaFieldProps {
 }
 
 function MetaField({ icon: Icon, label, value }: MetaFieldProps) {
+  // Estructura: <div> (hijo directo del <dl>) contiene icon + <dt> + <dd>.
+  // El icono va absoluto-flotante a la izquierda con un padding-left en el
+  // <dt>/<dd> para no insertar un nodo no-permitido entre <dl> y <dt>/<dd>.
   return (
-    <div className="flex items-start gap-2">
-      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">
-          {label}
-        </dt>
-        <dd className="font-display text-[13px] font-semibold">{value}</dd>
-      </div>
+    <div className="relative pl-5">
+      <Icon
+        className="absolute left-0 top-0.5 h-3.5 w-3.5 text-muted-foreground"
+        aria-hidden
+      />
+      <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="font-display text-[13px] font-semibold">{value}</dd>
     </div>
   );
 }
