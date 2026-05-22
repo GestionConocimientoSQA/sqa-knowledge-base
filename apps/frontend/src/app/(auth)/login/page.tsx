@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Compass, UserPen, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,6 +21,8 @@ const ROLE_ICONS: Record<RoleId, React.ComponentType<{ className?: string }>> = 
 export default function LoginPage() {
   const { user, signIn, isLoading } = useAuth();
   const router = useRouter();
+  const t = useTranslations("login");
+  const tRoles = useTranslations("roles");
 
   React.useEffect(() => {
     if (!isLoading && user) router.replace("/dashboard");
@@ -71,7 +74,10 @@ export default function LoginPage() {
                   key={id}
                   onClick={() => signIn(id)}
                   className="group flex items-center gap-3.5 rounded-md border border-border bg-card px-4 py-3 text-left transition-colors hover:border-sqa-naranja/40 hover:bg-sqa-naranja/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label={`Entrar como ${role.label} — ${role.name}`}
+                  aria-label={t("loginAs", {
+                    label: tRoles(`${id}.label`),
+                    name: role.name,
+                  })}
                 >
                   <span className="hex-clip-flat flex h-9 w-9 shrink-0 items-center justify-center bg-sqa-azul-corp text-sqa-naranja">
                     <Icon className="h-4 w-4" />

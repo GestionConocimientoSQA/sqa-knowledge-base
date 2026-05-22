@@ -1,0 +1,71 @@
+{
+  "common": {
+    "appName": "SQA Knowledge Base",
+    "back": "Volver",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "save": "Guardar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "download": "Descargar",
+    "search": "Buscar",
+    "clear": "Limpiar",
+    "loading": "Cargando…",
+    "retry": "Reintentar",
+    "settings": "Configuración",
+    "logout": "Cerrar sesión",
+    "skipToContent": "Saltar al contenido principal",
+    "language": "Idioma"
+  },
+  "nav": {
+    "groupWork": "Trabajo",
+    "groupKnowledge": "Conocimiento",
+    "groupGovernance": "Gobierno",
+    "dashboard": "Métricas",
+    "captura": "Captura",
+    "consulta": "Consulta",
+    "ingestion": "Ingesta",
+    "explorer": "Catálogo",
+    "myCaptures": "Mis capturas",
+    "admin": "Taxonomía y roles",
+    "mySessions": "Mis sesiones",
+    "seeAll": "Ver todo",
+    "activeAgent": "Agente activo"
+  },
+  "topbar": {
+    "title": {
+      "dashboard": "Métricas",
+      "chat": "Conversación con Aria",
+      "chatStart": "Iniciar conversación",
+      "ingestion": "Cola de ingesta",
+      "explorer": "Catálogo",
+      "admin": "Taxonomía y gobierno"
+    },
+    "openMenu": "Menú de usuario",
+    "toggleTheme": "Cambiar tema",
+    "toggleSidebar": "Colapsar o expandir la navegación lateral"
+  },
+  "login": {
+    "title": "Bienvenido a SQA Knowledge Base",
+    "subtitle": "Elegí cómo querés ingresar al sistema. Esto es un stub local; en producción usaremos Microsoft Entra ID.",
+    "loginAs": "Entrar como {label} — {name}"
+  },
+  "roles": {
+    "capturador": {
+      "label": "Capturador (Colaborador)",
+      "sub": "QA, Automation Engineer, Test Lead, áreas transversales"
+    },
+    "owner": {
+      "label": "Owner de carpeta",
+      "sub": "Responsable formal de una carpeta temática"
+    },
+    "gklead": {
+      "label": "GK Lead",
+      "sub": "Líder de Gestión del Conocimiento"
+    }
+  },
+  "languages": {
+    "es-CO": "Español (Colombia)",
+    "en-US": "English (US)"
+  }
+}

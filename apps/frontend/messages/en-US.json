@@ -1,0 +1,71 @@
+{
+  "common": {
+    "appName": "SQA Knowledge Base",
+    "back": "Back",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "download": "Download",
+    "search": "Search",
+    "clear": "Clear",
+    "loading": "Loading…",
+    "retry": "Retry",
+    "settings": "Settings",
+    "logout": "Sign out",
+    "skipToContent": "Skip to main content",
+    "language": "Language"
+  },
+  "nav": {
+    "groupWork": "Work",
+    "groupKnowledge": "Knowledge",
+    "groupGovernance": "Governance",
+    "dashboard": "Metrics",
+    "captura": "Capture",
+    "consulta": "Query",
+    "ingestion": "Ingestion",
+    "explorer": "Catalog",
+    "myCaptures": "My captures",
+    "admin": "Taxonomy & roles",
+    "mySessions": "My sessions",
+    "seeAll": "See all",
+    "activeAgent": "Active agent"
+  },
+  "topbar": {
+    "title": {
+      "dashboard": "Metrics",
+      "chat": "Conversation with Aria",
+      "chatStart": "Start conversation",
+      "ingestion": "Ingestion queue",
+      "explorer": "Catalog",
+      "admin": "Taxonomy & governance"
+    },
+    "openMenu": "User menu",
+    "toggleTheme": "Toggle theme",
+    "toggleSidebar": "Collapse or expand the side navigation"
+  },
+  "login": {
+    "title": "Welcome to SQA Knowledge Base",
+    "subtitle": "Choose how you want to enter the system. This is a local stub; in production we use Microsoft Entra ID.",
+    "loginAs": "Sign in as {label} — {name}"
+  },
+  "roles": {
+    "capturador": {
+      "label": "Contributor",
+      "sub": "QA, Automation Engineer, Test Lead, cross-functional roles"
+    },
+    "owner": {
+      "label": "Folder Owner",
+      "sub": "Formal owner of a thematic folder"
+    },
+    "gklead": {
+      "label": "GK Lead",
+      "sub": "Knowledge Management Lead"
+    }
+  },
+  "languages": {
+    "es-CO": "Español (Colombia)",
+    "en-US": "English (US)"
+  }
+}

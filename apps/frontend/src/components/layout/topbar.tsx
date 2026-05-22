@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Menu, LogOut, Sun, Moon, Monitor } from "lucide-react";
 import { useTheme } from "next-themes";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -14,6 +15,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { AriaMascot } from "@/components/brand/aria-mascot";
+import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { useUiStore } from "@/stores/ui-store";
 import { ROLES } from "@/lib/mocks/data";
@@ -27,6 +29,8 @@ export function Topbar({ title, breadcrumb }: TopbarProps) {
   const { user, signOut } = useAuth();
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const { setTheme } = useTheme();
+  const t = useTranslations("topbar");
+  const tCommon = useTranslations("common");
   const role = user ? ROLES[user.roleId] : null;
 
   return (
@@ -38,7 +42,7 @@ export function Topbar({ title, breadcrumb }: TopbarProps) {
         variant="ghost"
         size="icon"
         onClick={toggleSidebar}
-        aria-label="Colapsar o expandir la navegación lateral"
+        aria-label={t("toggleSidebar")}
       >
         <Menu className="h-5 w-5" />
       </Button>
@@ -54,10 +58,12 @@ export function Topbar({ title, breadcrumb }: TopbarProps) {
 
       <div className="flex-1" />
 
+      <LanguageSwitcher />
+
       {/* Theme toggle */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label="Cambiar tema">
+          <Button variant="ghost" size="icon" aria-label={t("toggleTheme")}>
             <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
             <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
           </Button>
@@ -84,7 +90,7 @@ export function Topbar({ title, breadcrumb }: TopbarProps) {
           <DropdownMenuTrigger asChild>
             <button
               className="flex max-w-[280px] items-center gap-2.5 rounded-full border border-sqa-azul-claro/30 bg-sqa-azul-claro/10 py-1.5 pl-1.5 pr-3.5 font-display transition-colors hover:bg-sqa-azul-claro/15"
-              aria-label="Menú de usuario"
+              aria-label={t("openMenu")}
             >
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="text-xs">
@@ -110,7 +116,7 @@ export function Topbar({ title, breadcrumb }: TopbarProps) {
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={signOut}>
               <LogOut className="mr-2 h-4 w-4" />
-              Cerrar sesión
+              {tCommon("logout")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
