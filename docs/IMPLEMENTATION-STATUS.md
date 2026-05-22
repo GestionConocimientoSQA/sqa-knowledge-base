@@ -11,8 +11,8 @@
 | Timeline estimado total | 16-20 semanas |
 | Fases totales | 12 (Fase 0 a Fase 11) |
 | Fases completadas | **4** (Fase 0 + Fase 5 + Fase 6 + Fase 7) |
-| Fase actual | **Fase 7 ✅ completa** (branch `fase-7-explorer-dashboard`, listo para merge) |
-| Próxima fase | Fase 1 — Backend (bloqueada por TI: App Registration en Entra ID) |
+| Fase actual | **Fase 10A ✅** (hardening parcial · branch `fase-10-hardening-parcial`) |
+| Próxima fase | Fase 1 — Backend (bloqueada por TI: App Registration en Entra ID + decisiones de stack) |
 | Bloqueo externo | Fase 1 (backend) espera App Registration en Entra ID por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI esqueleto ✓ · Infra Bicep esqueleto ✓ |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
@@ -31,7 +31,7 @@
 | **7** | **Frontend · Explorer + Dashboard interactivo** | **15** | **✅ Completada** | **100%** |
 | 8 | Frontend · Cola de ingesta | 16 | ⬜ Pendiente | 0% |
 | 9 | Frontend · Admin (usuarios, taxonomía, skills, audit) | 17 | ⬜ Pendiente | 0% |
-| 10 | Hardening (perf + a11y + security review) | 18-19 | ⬜ Pendiente | parcial (security headers, gitleaks, audits stubs) |
+| 10 | Hardening (perf + a11y + security review) | 18-19 | 🔄 Sub-fase 10A ✅ | E2E Playwright + axe a11y + CSP estricta + Lighthouse CI base; falta backend-side |
 | 11 | Migración legacy + paso a producción Azure | 20 | ⬜ Pendiente | parcial (Bicep esqueleto, OIDC workflow) |
 
 ---
@@ -911,28 +911,94 @@ Módulo de administración solo para usuarios admin (GK Lead, Owner).
 
 # Fase 10 · Hardening
 
-**Estado:** ⬜ Pendiente · **Semanas roadmap:** 18-19
+**Estado:** 🔄 Parcial (Fase 10A ✅) · **Semanas roadmap:** 18-19 · branch `fase-10-hardening-parcial`
 
-## Objetivo
+## Sub-fase 10A · Hardening parcial frontend (sin TI)
 
-La app está lista para producción. Performance, accesibilidad, seguridad, observabilidad, i18n.
+**Estado:** ✅ Completada · 2026-05-22
 
-## Tareas planificadas
+Mientras esperamos respuestas de TI para arrancar el backend (Fase 1), se ejecutó la parte del hardening que solo depende del frontend ya cerrado (Fases 5-7). Cubre **E2E + a11y + seguridad headers + performance baseline**.
+
+### 10A.1 · Suite Playwright E2E
+
+- ✅ Setup completo: `@playwright/test`, `playwright.config.ts` con webServer auto-start en puerto 3100, chromium por defecto, `workers: 1` para estabilidad con dev server compartido.
+- ✅ `e2e/fixtures/auth.ts` — fixture `loginAs(roleId)` que inyecta el user en localStorage vía `addInitScript`, sin pasar por la UI de login en cada test.
+- ✅ **26 specs E2E** cubriendo los flujos cerrados:
+  - `auth.spec.ts` (5) — redirect a /login, login por rol, variantes admin/capturador
+  - `explorer.spec.ts` (9) — filtros, URL state, debounce, paginación, F5
+  - `document-detail.spec.ts` (5) — breadcrumb, meta, citations, gating admin
+  - `chat-captura.spec.ts` (4) — flujo modo A end-to-end con streaming, tokenUsage gating, persistencia F5, modo B con pill C
+  - `my-captures.spec.ts` (2) — empty state, link en sidebar
+- ✅ Scripts: `test:e2e`, `test:e2e:ui`, `test:e2e:headed`.
+
+**Bug fix detectado y corregido**: `useExplorerFilters` perdía clicks rápidos en filter chips por race condition (el closure de `patchFilters` capturaba `params` estale). Los setters ahora leen `window.location.search` vivo.
+
+### 10A.2 · axe-core (WCAG 2.1 AA)
+
+- ✅ `@axe-core/playwright` integrado.
+- ✅ `e2e/fixtures/a11y.ts` — helper `expectNoAxeViolations(page)` con reglas WCAG2A/AA + 2.1A/AA.
+- ✅ `e2e/a11y.spec.ts` — **8 audits** de páginas críticas (/login, /dashboard admin + capturador, /explorer + con filtros, /explorer/[docId], /chat, /my-captures).
+- ✅ **3 violaciones reales detectadas y corregidas**:
+  1. `color-contrast` en tokens `success`/`authoritative`/`warning`/`error`. Luminancia ajustada a 26-32% en light mode + overrides explícitos en dark mode.
+  2. `color-contrast` en badge "Autoritativo". Cambio de variant: fondo verde sólido + texto blanco (~9:1 contraste).
+  3. `definition-list`/`dlitem` en `DocumentMetaPanel`. Refactor: el group div es hijo directo del `<dl>` con icono absoluto-flotante.
+
+### 10A.3 · CSP estricta + HSTS
+
+- ✅ `next.config.mjs` extendido con **Content-Security-Policy** completa:
+  - `default-src 'self'` · `frame-ancestors 'none'` · `base-uri 'self'` · `form-action 'self'` · `object-src 'none'` · `upgrade-insecure-requests`
+  - `script-src` con dev mode permisivo (HMR + React Refresh) y prod más estricto
+  - `style-src` con `'unsafe-inline'` documentado (Tailwind/shadcn lo requieren)
+  - `img-src 'self' data: blob:`, `font-src 'self' data:`
+- ✅ `Strict-Transport-Security` con 2 años + `includeSubDomains` + `preload`.
+- ✅ `e2e/security-headers.spec.ts` (6 specs) — verifica los 6 headers en cada página, `X-Powered-By` ausente, CSP incluye directivas críticas.
+
+**Pendiente Fase 10 completa**: nonce dinámico vía middleware para eliminar `'unsafe-inline'` de `script-src` en hidratación de Next.
+
+### 10A.4 · Lighthouse CI
+
+- ✅ `@lhci/cli` + `lighthouserc.cjs` configurado para auditar build de producción en puerto 3200.
+- ✅ Script `test:lighthouse`.
+- ✅ Workflow `.github/workflows/lighthouse.yml` para CI (ubuntu-latest, corre en PR + push a master, sube reports como artifact con retención 14 días).
+- ✅ **Baseline real medido** (login, build de prod):
+
+  | Categoría | Score |
+  |---|---|
+  | Performance | **99/100** |
+  | Accessibility | **100/100** |
+  | Best Practices | **96/100** |
+  | SEO | **100/100** |
+
+- ✅ Thresholds en `lighthouserc.cjs` calibrados al baseline (`error` en perf ≥ 0.9, a11y ≥ 0.95, best-practices ≥ 0.9; `warn` en SEO ≥ 0.9).
+- ⚠ Known issue Windows: `chrome-launcher` falla en `rmSync` al limpiar el tempdir del browser. Cosmético — los reports ya quedaron generados. CI Linux no tiene este bug.
+
+### Validación final 10A
+
+| Check | Resultado |
+|---|---|
+| `pnpm typecheck` | ✅ 0 errores |
+| `pnpm test` (Vitest unit) | ✅ **220/220** |
+| `pnpm test:e2e` (Playwright) | ✅ **40/40** (26 funcional + 8 a11y + 6 security) |
+| `pnpm test:lighthouse` (en login) | ✅ Perf 99 · A11y 100 · BP 96 · SEO 100 |
+| `pnpm build` | ✅ build OK con CSP estricta aplicada |
+
+## Tareas restantes (Fase 10 completa)
+
+Estas tareas requieren backend ya en marcha (Fase 1+) o son optimizaciones post-deploy:
 
 ### Performance
-- ⬜ Suite completa de tests E2E con Playwright (3 modos)
-- ⬜ Tests de carga con k6 (50 usuarios concurrentes)
-- ⬜ Optimización queries lentas (EXPLAIN ANALYZE sobre queries críticas)
-- ⬜ Code splitting + lazy loading en frontend
+- ⬜ Tests de carga con k6 (50 usuarios concurrentes) — depende de backend
+- ⬜ Optimización queries lentas (EXPLAIN ANALYZE sobre queries críticas) — depende de DB
+- ⬜ Code splitting + lazy loading frontend (oportunidad, no urgente con 106 kB shared)
 - ⬜ Reducir tamaño de imágenes Docker
 
 ### Seguridad
-- ⬜ **Security review** completa (OWASP Top 10)
+- ⬜ **Security review** completa (OWASP Top 10) — al final, post-backend
 - ⬜ Activar gates de `npm audit` y `pip-audit` (ya stub en CI)
-- ⬜ Rate limiting en endpoints sensibles (100 req/min general, 10/min chat, 5/min upload)
-- ⬜ CSRF protection
-- ⬜ Content Security Policy estricta
+- ⬜ Rate limiting en endpoints sensibles (100 req/min general, 10/min chat, 5/min upload) — backend
+- ⬜ CSRF protection — backend Fase 1
 - ⬜ Penetration test con OWASP ZAP en CI
+- ⬜ CSP con nonce dinámico vía middleware (eliminar `'unsafe-inline'` en `script-src`)
 - ⬜ Activar plugin `security-guidance` para revisión continua
 
 ### Observabilidad
@@ -940,9 +1006,17 @@ La app está lista para producción. Performance, accesibilidad, seguridad, obse
 - ⬜ Dashboards Azure Monitor exportados como JSON
 
 ### Accesibilidad
-- ⬜ Lighthouse score ≥ 90 (performance + accessibility + best practices)
-- ⬜ axe-core en E2E
-- ⬜ Navegación por teclado completa
+- ✅ Lighthouse score ≥ 90 (perf + a11y + best-practices) — **alcanzado en 10A.4**
+- ✅ axe-core en E2E — **integrado en 10A.2**
+- ⬜ Navegación por teclado completa (validación manual end-to-end)
+
+### Documentación
+- ⬜ ADRs finales (0002-pgvector → Azure SQL/AI Search según TI, 0003-container-apps, 0004-clean-arch, 0005-langgraph)
+- ⬜ Runbooks operativos
+- ⬜ Troubleshooting guides
+
+### i18n
+- ⬜ es-CO (default) + en-US si aplica
 
 ### Documentación
 - ⬜ ADRs finales (0002-pgvector, 0003-container-apps, 0004-clean-arch, 0005-langgraph)

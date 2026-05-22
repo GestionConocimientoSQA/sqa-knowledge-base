@@ -1,0 +1,57 @@
+name: lighthouse
+
+# Audita performance, accesibilidad, best-practices y SEO contra un build
+# de producción del frontend en cada PR a master y en pushes a master.
+# Corre en ubuntu-latest porque chrome-launcher tiene un issue de cleanup
+# en Windows que rompe el exit code (los datos son correctos, pero el
+# proceso falla con EPERM al limpiar el tempdir del browser).
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "apps/frontend/**"
+      - ".github/workflows/lighthouse.yml"
+  push:
+    branches: [master]
+    paths:
+      - "apps/frontend/**"
+
+defaults:
+  run:
+    working-directory: apps/frontend
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Run Lighthouse CI
+        run: pnpm test:lighthouse
+
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports
+          path: apps/frontend/.lighthouseci/
+          retention-days: 14

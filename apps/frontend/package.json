@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "test:lighthouse": "lhci autorun --config=./lighthouserc.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -53,6 +54,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4",
+    "@lhci/cli": "^0.14",
     "@playwright/test": "^1",
     "@tanstack/react-query-devtools": "^5.62.11",
     "@testing-library/jest-dom": "^6.6.3",
