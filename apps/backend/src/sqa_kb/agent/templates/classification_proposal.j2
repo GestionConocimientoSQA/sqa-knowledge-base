@@ -1,0 +1,16 @@
+{# ETAPA 1 — propuesta de clasificación.
+
+Recibe:
+- topic: tema detectado por el LLM.
+- classification: Classification con .category, .document_type, .confidence, .reasoning.
+#}
+Detecté que querés capturar sobre: **{{ topic }}**
+
+Mi propuesta de clasificación:
+- **Carpeta**: {{ classification.category }}
+- **Tipo de documento**: {{ classification.document_type }}
+- **Confianza**: {{ "%.0f%%" | format(classification.confidence * 100) }}
+
+Razonamiento: {{ classification.reasoning }}
+
+¿Te parece bien o querés que ajuste algo antes de continuar?

@@ -1,0 +1,19 @@
+{# ETAPA 1 — alerta de documento existente similar.
+
+Recibe:
+- existing: list[ExistingDocument] con .document_id, .filename, .category, .distance.
+- topic: tema actual.
+#}
+Encontré documentos similares en el KB sobre **{{ topic }}**:
+
+{% for doc in existing %}
+- **{{ doc.filename }}** ({{ doc.category }} / {{ doc.document_type }})
+  Distancia semántica: {{ "%.2f" | format(doc.distance) }}
+  ID: {{ doc.document_id }}
+{% endfor %}
+
+¿Cómo querés seguir?
+
+1. **Actualizar** el documento existente con la información nueva.
+2. **Complementar** con un documento adicional (queda separado).
+3. **Revisar primero** los existentes antes de decidir.
