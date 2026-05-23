@@ -282,6 +282,137 @@ def test_parse_handles_bare_triple_backtick() -> None:
     assert result.category == "TEC"
 
 
+# ===========================================================================
+# score_capture (Fase 2.4)
+# ===========================================================================
+
+
+async def test_score_capture_happy_path() -> None:
+    """Devuelve CaptureScoring con 4 dimensiones + value_score."""
+    from sqa_kb.agent.tools import score_capture
+
+    gateway = _FakeGateway(
+        response_text=(
+            '{"specificity":4,"depth":5,"reusability":3,"uniqueness":4,'
+            '"value_score":4.0,"observations":"sólido"}'
+        )
+    )
+    result = await score_capture(  # type: ignore[arg-type]
+        gateway,
+        document_content="contenido del doc",
+        document_type="MTEC",
+    )
+    assert result.specificity == 4
+    assert result.depth == 5
+    assert result.value_score == 4.0
+    assert result.observations == "sólido"
+
+
+async def test_score_capture_empty_content_raises() -> None:
+    from sqa_kb.agent.tools import score_capture
+
+    gateway = _FakeGateway()
+    with pytest.raises(ValueError, match="document_content vacío"):
+        await score_capture(  # type: ignore[arg-type]
+            gateway, document_content="", document_type="MTEC"
+        )
+
+
+async def test_score_capture_handles_markdown_wrapping() -> None:
+    from sqa_kb.agent.tools import score_capture
+
+    gateway = _FakeGateway(
+        response_text=(
+            "```json\n"
+            '{"specificity":3,"depth":3,"reusability":3,"uniqueness":3,'
+            '"value_score":3.0,"observations":"medio"}\n'
+            "```"
+        )
+    )
+    result = await score_capture(  # type: ignore[arg-type]
+        gateway, document_content="x", document_type="POL"
+    )
+    assert result.value_score == 3.0
+
+
+async def test_score_capture_coerces_int_strings() -> None:
+    """Si el modelo devuelve '4' (string) en lugar de 4, lo coercemos."""
+    from sqa_kb.agent.tools import score_capture
+
+    gateway = _FakeGateway(
+        response_text=(
+            '{"specificity":"4","depth":"3","reusability":"5","uniqueness":"4",'
+            '"value_score":"4.0","observations":"ok"}'
+        )
+    )
+    result = await score_capture(  # type: ignore[arg-type]
+        gateway, document_content="x", document_type="POL"
+    )
+    assert result.specificity == 4
+    assert result.depth == 3
+    assert result.value_score == 4.0
+
+
+async def test_score_capture_unparseable_int_defaults_to_1() -> None:
+    """Edge: el modelo devuelve texto en lugar de int → coerce a 1."""
+    from sqa_kb.agent.tools import score_capture
+
+    gateway = _FakeGateway(
+        response_text=(
+            '{"specificity":"high","depth":3,"reusability":4,"uniqueness":4,'
+            '"value_score":3.5,"observations":"x"}'
+        )
+    )
+    result = await score_capture(  # type: ignore[arg-type]
+        gateway, document_content="x", document_type="POL"
+    )
+    assert result.specificity == 1  # fallback
+
+
+async def test_score_capture_malformed_json_raises() -> None:
+    from sqa_kb.agent.tools import score_capture
+
+    gateway = _FakeGateway(response_text="esto no es JSON válido")
+    with pytest.raises(ValueError, match="no-JSON"):
+        await score_capture(  # type: ignore[arg-type]
+            gateway, document_content="x", document_type="POL"
+        )
+
+
+async def test_score_capture_uses_temperature_zero() -> None:
+    """Scoring debe ser determinístico — temperature=0."""
+    from sqa_kb.agent.tools import score_capture
+
+    gateway = _FakeGateway(
+        response_text=(
+            '{"specificity":4,"depth":4,"reusability":4,"uniqueness":4,'
+            '"value_score":4.0,"observations":""}'
+        )
+    )
+    await score_capture(  # type: ignore[arg-type]
+        gateway, document_content="x", document_type="POL"
+    )
+    assert gateway.last_temperature == 0.0
+
+
+async def test_score_capture_score_out_of_range_raises_validation_error() -> None:
+    """Pydantic valida ranges 1-5. Si el LLM devuelve 6, ValidationError."""
+    from pydantic import ValidationError
+
+    from sqa_kb.agent.tools import score_capture
+
+    gateway = _FakeGateway(
+        response_text=(
+            '{"specificity":6,"depth":3,"reusability":3,"uniqueness":3,'
+            '"value_score":3.0,"observations":"x"}'
+        )
+    )
+    with pytest.raises(ValidationError):
+        await score_capture(  # type: ignore[arg-type]
+            gateway, document_content="x", document_type="POL"
+        )
+
+
 def test_parse_invalid_category_raises_validation_error() -> None:
     """Pydantic valida category contra CategoryCode literal."""
     raw = '{"category":"BANANA","document_type":"MTEC","confidence":0.5,"reasoning":"x"}'

@@ -1,0 +1,32 @@
+{# ETAPA 4 — resumen para confirmación.
+
+Recibe:
+- topic
+- classification: .category, .document_type
+- free_capture_blocks: list[str]
+- deep_dive_qa: dict[str, str] (pregunta → respuesta)
+- is_reusable_content: bool | None (si True ⇒ anonimizamos al generar)
+#}
+Listo, esto es lo que tengo armado:
+
+**Tema**: {{ topic }}
+**Carpeta**: {{ classification.category }}
+**Tipo**: {{ classification.document_type }}
+
+### Captura libre
+{% for block in free_capture_blocks %}
+- {{ block }}
+{% endfor %}
+
+{% if deep_dive_qa %}
+### Precisiones
+{% for q, a in deep_dive_qa.items() %}
+- **{{ q }}**: {{ a }}
+{% endfor %}
+{% endif %}
+
+{% if is_reusable_content %}
+*Marcaré este documento como contenido reutilizable — voy a anonimizar referencias específicas a clientes antes de generarlo.*
+{% endif %}
+
+¿Te parece bien así o querés ajustar algo antes de que genere el documento?

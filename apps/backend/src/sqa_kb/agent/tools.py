@@ -28,7 +28,7 @@ import json
 import logging
 from collections.abc import Sequence
 
-from sqa_kb.agent.state import Classification, ExistingDocument
+from sqa_kb.agent.state import CaptureScoring, Classification, ExistingDocument
 from sqa_kb.ports.gateways import ChatMessage, LlmGateway
 from sqa_kb.ports.repositories import DocumentRepository
 
@@ -133,6 +133,101 @@ async def classify_topic(
         temperature=0.0,  # determinístico — clasificación no debe variar
     )
     return _parse_classification(completion.text)
+
+
+# ===========================================================================
+# score_capture
+# ===========================================================================
+
+
+_SCORE_SYSTEM_PROMPT = """\
+Sos un evaluador del valor del conocimiento capturado en el KB de SQA.
+Devolvés JSON con exactamente este shape:
+
+{
+  "specificity": <int 1-5>,
+  "depth": <int 1-5>,
+  "reusability": <int 1-5>,
+  "uniqueness": <int 1-5>,
+  "value_score": <float 1.0-5.0>,
+  "observations": "<una línea con razonamiento concreto>"
+}
+
+Criterios (escala 1=mínimo, 5=máximo):
+- specificity: cuán concreto y accionable es (genérico vs. específico).
+- depth: nivel de detalle técnico aportado.
+- reusability: aplicabilidad en otros proyectos / clientes.
+- uniqueness: aporta info nueva vs. ya existente en KB.
+- value_score: promedio ponderado redondeado a 0.1.
+
+NO escribas texto fuera del JSON. NO uses markdown.
+"""
+
+
+async def score_capture(
+    gateway: LlmGateway,
+    *,
+    document_content: str,
+    document_type: str,
+    model: str | None = None,
+) -> CaptureScoring:
+    """Pide al LLM scoring de 4 dimensiones para el documento generado.
+
+    Lanza `ValueError` si el JSON está malformado. Pydantic valida los
+    ranges (1-5) en `CaptureScoring`.
+    """
+    if not document_content.strip():
+        raise ValueError("document_content vacío — no se puede scorear")
+
+    messages: list[ChatMessage] = [
+        ChatMessage(role="system", content=_SCORE_SYSTEM_PROMPT),
+        ChatMessage(
+            role="user",
+            content=(
+                f"Tipo de documento: {document_type}\n"
+                f"Contenido:\n\n{document_content}"
+            ),
+        ),
+    ]
+    completion = await gateway.complete(
+        messages,
+        model=model,
+        max_tokens=512,
+        temperature=0.0,
+    )
+    return _parse_scoring(completion.text)
+
+
+def _parse_scoring(raw: str) -> CaptureScoring:
+    """Parsea el JSON del scoring. Misma robustez que `_parse_classification`."""
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines)
+
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"scorer devolvió no-JSON: {raw[:200]!r}") from exc
+
+    # Coerce ints if model returned strings.
+    for k in ("specificity", "depth", "reusability", "uniqueness"):
+        if isinstance(data.get(k), str):
+            try:
+                data[k] = int(float(data[k]))
+            except ValueError:
+                data[k] = 1
+    if isinstance(data.get("value_score"), str):
+        try:
+            data["value_score"] = float(data["value_score"])
+        except ValueError:
+            data["value_score"] = 1.0
+
+    return CaptureScoring.model_validate(data)
 
 
 def _parse_classification(raw: str) -> Classification:
