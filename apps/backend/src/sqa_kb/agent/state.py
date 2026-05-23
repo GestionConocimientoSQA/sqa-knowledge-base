@@ -19,7 +19,8 @@ Convenciones:
 
 from __future__ import annotations
 
-from typing import Any, Literal
+import operator
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -169,7 +170,11 @@ class AgentState(BaseModel):
     previous_stage: str | None = None
 
     # === Mensajes ===
-    messages: list[dict[str, Any]] = Field(default_factory=list)
+    # `operator.add` como reducer: cuando un nodo devuelve `{"messages":
+    # [msg]}`, LangGraph hace `state.messages + [msg]` en vez de reemplazar.
+    # Así cada nodo solo emite los mensajes que aporta — no tiene que
+    # acordarse de incluir el historial previo.
+    messages: Annotated[list[dict[str, Any]], operator.add] = Field(default_factory=list)
     """Mensajes serializables a JSON. LangGraph también soporta BaseMessage
     de langchain-core, pero los guardamos como dict para no acoplar el
     state al SDK. Los nodos los reconvierten al pasar al LLM."""
