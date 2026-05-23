@@ -43,7 +43,11 @@ from sqa_kb.adapters.repositories.postgres.taxonomy import (
 )
 from sqa_kb.adapters.repositories.postgres.users import PostgresUserRepository
 from sqa_kb.api.auth import router as auth_router
+from sqa_kb.api.dashboard import router as dashboard_router
+from sqa_kb.api.documents import router as documents_router
 from sqa_kb.api.health import register_health_check, router as health_router
+from sqa_kb.api.sessions import router as sessions_router
+from sqa_kb.api.taxonomy import router as taxonomy_router
 from sqa_kb.config import Settings, get_settings
 from sqa_kb.middleware.error_handler import register_error_handlers
 from sqa_kb.middleware.request_id import RequestIdMiddleware
@@ -121,6 +125,10 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(auth_router)
+    app.include_router(taxonomy_router)
+    app.include_router(documents_router)
+    app.include_router(sessions_router)
+    app.include_router(dashboard_router)
 
     @app.get("/", tags=["root"])
     async def root() -> dict[str, str]:

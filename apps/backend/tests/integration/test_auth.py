@@ -17,7 +17,7 @@ async def _seed_db(session_factory) -> None:  # type: ignore[no-untyped-def]
     await seed(session_factory)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def client(_seed_db) -> Iterator[TestClient]:  # type: ignore[no-untyped-def]
     yield TestClient(create_app())
 

@@ -18,8 +18,9 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 
-from sqa_kb.config import Settings
+from sqa_kb.config import AppEnv, Settings
 from sqa_kb.domain.errors import ExternalServiceError
 from sqa_kb.observability.logging import get_logger
 from sqa_kb.ports.gateways import HealthCheckResult
@@ -42,13 +43,23 @@ def create_engine(settings: Settings) -> AsyncEngine:
             service="postgres",
         )
 
+    # En tests usamos NullPool: TestClient crea/destruye event loops por
+    # request y un connection pool persistente intenta cerrar connections
+    # contra loops ya cerrados ("Event loop is closed"). NullPool abre
+    # connection nueva cada vez — más lento pero estable en tests.
+    extra: dict[str, object] = {}
+    if settings.app_env is AppEnv.TEST:
+        extra["poolclass"] = NullPool
+    else:
+        extra["pool_size"] = settings.database_pool_size
+        extra["max_overflow"] = settings.database_pool_max_overflow
+        extra["pool_pre_ping"] = True
+
     return create_async_engine(
         settings.database_url.get_secret_value(),
         echo=settings.database_echo,
-        pool_size=settings.database_pool_size,
-        max_overflow=settings.database_pool_max_overflow,
-        pool_pre_ping=True,
         future=True,
+        **extra,  # type: ignore[arg-type]
     )
 
 
