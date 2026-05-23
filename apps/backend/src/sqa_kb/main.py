@@ -10,6 +10,16 @@ Compone los componentes core en el orden esperado:
 
 from __future__ import annotations
 
+import asyncio
+import sys
+
+# Windows: psycopg async (Fase 2.1) requiere SelectorEventLoop, no el
+# ProactorEventLoop default de asyncio en Python 3.8+. Tiene que setearse
+# antes de que uvicorn cree el loop, por eso va al tope del módulo.
+# En Linux/Azure (target prod) es no-op.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -45,7 +55,8 @@ from sqa_kb.adapters.repositories.postgres.users import PostgresUserRepository
 from sqa_kb.api.auth import router as auth_router
 from sqa_kb.api.dashboard import router as dashboard_router
 from sqa_kb.api.documents import router as documents_router
-from sqa_kb.api.health import register_health_check, router as health_router
+from sqa_kb.api.health import register_health_check
+from sqa_kb.api.health import router as health_router
 from sqa_kb.api.sessions import router as sessions_router
 from sqa_kb.api.taxonomy import router as taxonomy_router
 from sqa_kb.config import Settings, get_settings
