@@ -226,7 +226,11 @@ Despliegue local completo SIN depender de TI — `docker-compose up` + backend +
 - ✅ **1B.5** Endpoints CRUD básicos: `/auth/me`, `/categories`, `/doc-types`, `/documents`, `/documents/{id}/authoritative`, `/my-captures`, `/sessions/*`, `/dashboard/{hot-topics,activity}`.
 - ⬜ **1B.6** Adapter LLM → Anthropic directo (`adapters/llm/anthropic_direct.py`) con la key personal de `credentials.env`. *(Diferida; Fase 2 lo necesita junto al agente)*
 - ✅ **1B.7** Conectar frontend al backend real — `USE_REAL_API` en `lib/api/client.ts` + dispatcher mock/real en `documents.ts`/`sessions.ts`/`auth.ts`. Backend serializa camelCase (`alias_generator=to_camel`) para que el contrato sea directo.
-- ⬜ **1B.8** Tests integración manuales (smoke con backend+frontend levantados) + STATUS + merge a master.
+- ✅ **1B.8** Tests integración + smoke API + STATUS + merge a master. **Validación**: backend integration 46/46 contra Postgres real, frontend unit 220/220 (modo mock), backend domain 27/27, smoke API 10/10 (curl contra `/auth/me` con 3 roles, `/categories`, sessions CRUD, IDOR 404, DELETE 204). Filas agregadas a `docs/test-reports/test-runs.xlsx`.
+
+### Cierre 1B-local
+
+Resultado: **frontend ↔ backend ↔ PostgreSQL funcionando localmente sin TI**. Pendientes diferidos (1B.4 Blob, 1B.6 LLM) no bloquean — Fase 2 los necesita para el agente, y se atacan junto con el SSE streaming. El swap a Entra ID real (1B-azure) sigue esperando App Registration de TI.
 
 ## Pendiente (sub-fase 1B-azure)
 
