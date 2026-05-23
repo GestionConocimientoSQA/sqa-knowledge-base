@@ -141,9 +141,13 @@ class Settings(BaseSettings):
     litellm_api_key: SecretStr | None = Field(default=None)
     """Solo si `llm_gateway_kind=litellm` (proxy gestionado por TI o self-host)."""
 
-    llm_default_model: str = Field(default="claude-sonnet-4-6")
-    llm_classification_model: str = Field(default="claude-haiku-4")
-    llm_deep_model: str = Field(default="claude-opus-4")
+    # Modelos Anthropic. Decisión Fase 2: usamos Sonnet 4.5 para todo
+    # (calidad consistente + prompt caching baja el costo). Los slots de
+    # classification/deep quedan para cuando midamos costo real y querramos
+    # mixed-model (ROADMAP §12 mitigación de costos).
+    llm_default_model: str = Field(default="claude-sonnet-4-5")
+    llm_classification_model: str = Field(default="claude-sonnet-4-5")
+    llm_deep_model: str = Field(default="claude-sonnet-4-5")
 
     # ---------------- PII / anonymization (Presidio) ----------------
 
