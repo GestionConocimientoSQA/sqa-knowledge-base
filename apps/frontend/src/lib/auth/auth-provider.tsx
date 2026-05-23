@@ -7,6 +7,8 @@ import {
   signIn as signInStub,
   signOut as signOutStub,
 } from "./auth-stub";
+import { fetchCurrentUser } from "@/lib/api/auth";
+import { USE_REAL_API } from "@/lib/api/client";
 import type { AuthUser, RoleId } from "@/types/domain";
 
 interface AuthContextValue {
@@ -24,14 +26,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   React.useEffect(() => {
-    setUser(getCurrentUser());
-    setIsLoading(false);
+    let cancelled = false;
+    const stub = getCurrentUser();
+    if (!stub) {
+      setIsLoading(false);
+      return;
+    }
+    if (!USE_REAL_API) {
+      setUser(stub);
+      setIsLoading(false);
+      return;
+    }
+    // Con backend real, revalidamos el bearer contra `/auth/me` para traer
+    // los permisos finos auténticos (no solo el `isAdmin` del stub).
+    void fetchCurrentUser().then((u) => {
+      if (cancelled) return;
+      setUser(u ?? stub);
+      setIsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const signIn = React.useCallback(
     (roleId: RoleId) => {
       const u = signInStub(roleId);
       setUser(u);
+      // En modo backend real podríamos hidratar con `/auth/me`, pero el
+      // stub ya provee oid/email/name/role canónicos antes del swap MSAL.
       router.push("/dashboard");
     },
     [router],

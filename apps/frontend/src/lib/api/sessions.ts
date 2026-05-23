@@ -1,28 +1,33 @@
 /**
  * API pública de sesiones del agente.
  *
- * En Fase 6.1 las funciones operan contra `sessionsStore` (localStorage); en
- * Fase 1 cambian a HTTP contra `/api/v1/sessions/*` sin cambiar la firma. Por
- * eso devuelven `Promise` aun cuando la implementación local es sincrónica.
+ * Modo stub (sin `NEXT_PUBLIC_API_URL`): persiste en `sessionsStore`
+ * (localStorage) para que la UI siga funcionando sin backend, como en
+ * Fase 6.1.
+ *
+ * Modo backend real: opera contra `/sessions/*` (Fase 1B.5). El swap es
+ * automático según `USE_REAL_API`. Los attachments y la persistencia de
+ * mensajes siguen usando los stores locales — Fase 2 los moverá al backend
+ * cuando se implemente el streaming SSE.
  *
  * Espejo del catálogo §15.3 del ROADMAP:
  *   POST   /sessions                       → createSession
  *   GET    /sessions                       → listSessions
  *   GET    /sessions/{id}                  → getSession
+ *   PATCH  /sessions/{id}/status           → pauseSession / resumeSession
  *   DELETE /sessions/{id}                  → deleteSession
- *   POST   /sessions/{id}/pause            → pauseSession
- *   POST   /sessions/{id}/resume           → resumeSession
  *   GET    /sessions/{id}/messages         → getMessages
  */
+import { api, USE_REAL_API } from "@/lib/api/client";
+import { attachmentsStore } from "@/lib/api/attachments-store";
+import { messagesStore } from "@/lib/api/messages-store";
+import { sessionsStore } from "@/lib/api/sessions-store";
 import type {
   AgentMessage,
   AgentSession,
   AgentSessionSummary,
 } from "@/types/agent";
 import type { SessionMode } from "@/types/domain";
-import { sessionsStore } from "@/lib/api/sessions-store";
-import { messagesStore } from "@/lib/api/messages-store";
-import { attachmentsStore } from "@/lib/api/attachments-store";
 
 const STUB_DELAY_MS = 120;
 
@@ -52,6 +57,16 @@ export interface CreateSessionInput {
 export async function createSession(
   input: CreateSessionInput,
 ): Promise<AgentSession> {
+  if (USE_REAL_API) {
+    return api
+      .post("sessions", {
+        json: {
+          mode: input.mode,
+          title: input.title?.trim() || undefined,
+        },
+      })
+      .json<AgentSession>();
+  }
   const now = new Date().toISOString();
   const session: AgentSession = {
     id: generateSessionId(),
@@ -90,6 +105,17 @@ export interface ListSessionsFilter {
 export async function listSessions(
   filter: ListSessionsFilter = {},
 ): Promise<AgentSessionSummary[]> {
+  if (USE_REAL_API) {
+    // El backend filtra por `caller_oid` automáticamente — `ownerOid` del
+    // filtro se ignora ahí (no leaks de otras sesiones).
+    const search = new URLSearchParams();
+    if (filter.mode) search.set("mode", filter.mode);
+    if (filter.status) search.set("status", filter.status);
+    const items = await api
+      .get("sessions", { searchParams: search })
+      .json<AgentSession[]>();
+    return items.map(toSummary);
+  }
   const items = sessionsStore
     .list()
     .filter((s) =>
@@ -103,10 +129,28 @@ export async function listSessions(
 }
 
 export async function getSession(id: string): Promise<AgentSession | null> {
+  if (USE_REAL_API) {
+    try {
+      return await api.get(`sessions/${id}`).json<AgentSession>();
+    } catch (err) {
+      if (isHttp404(err)) return null;
+      throw err;
+    }
+  }
   return delay(sessionsStore.get(id));
 }
 
 export async function pauseSession(id: string): Promise<AgentSession | null> {
+  if (USE_REAL_API) {
+    try {
+      return await api
+        .patch(`sessions/${id}/status`, { json: { status: "paused" } })
+        .json<AgentSession>();
+    } catch (err) {
+      if (isHttp404(err)) return null;
+      throw err;
+    }
+  }
   const current = sessionsStore.get(id);
   if (!current) return delay(null);
   const updated: AgentSession = {
@@ -119,6 +163,16 @@ export async function pauseSession(id: string): Promise<AgentSession | null> {
 }
 
 export async function resumeSession(id: string): Promise<AgentSession | null> {
+  if (USE_REAL_API) {
+    try {
+      return await api
+        .patch(`sessions/${id}/status`, { json: { status: "active" } })
+        .json<AgentSession>();
+    } catch (err) {
+      if (isHttp404(err)) return null;
+      throw err;
+    }
+  }
   const current = sessionsStore.get(id);
   if (!current) return delay(null);
   const updated: AgentSession = {
@@ -131,6 +185,14 @@ export async function resumeSession(id: string): Promise<AgentSession | null> {
 }
 
 export async function deleteSession(id: string): Promise<void> {
+  if (USE_REAL_API) {
+    await api.delete(`sessions/${id}`);
+    // Limpiar mensajes/attachments locales asociados (si quedaron del modo
+    // stub) — sin red para que el flujo offline siga consistente.
+    messagesStore.remove(id);
+    attachmentsStore.removeSession(id);
+    return;
+  }
   sessionsStore.remove(id);
   messagesStore.remove(id);
   attachmentsStore.removeSession(id);
@@ -139,19 +201,44 @@ export async function deleteSession(id: string): Promise<void> {
 
 /**
  * Restaura una sesión + sus mensajes — usado para undo de borrado accidental.
- * En el backend real (Fase 1) el borrado es soft (`status: "abandoned"`) y
- * undo será un endpoint dedicado; acá lo cubrimos volviendo a upsert.
+ * En el backend real (Fase 1) el borrado es DELETE definitivo; el undo
+ * recrea la sesión vía POST. En modo stub revierte al sessionsStore directo.
  */
 export async function restoreSession(
   session: AgentSession,
   messages: AgentMessage[],
 ): Promise<AgentSession> {
+  if (USE_REAL_API) {
+    const recreated = await api
+      .post("sessions", {
+        json: { mode: session.mode, title: session.title },
+      })
+      .json<AgentSession>();
+    // Mensajes siguen en local hasta que Fase 2 los persista server-side.
+    if (messages.length > 0) messagesStore.save(recreated.id, messages);
+    return recreated;
+  }
   sessionsStore.upsert(session);
   if (messages.length > 0) messagesStore.save(session.id, messages);
   return delay(session);
 }
 
 export async function getMessages(sessionId: string): Promise<AgentMessage[]> {
+  if (USE_REAL_API) {
+    // Backend devuelve `Message[]` (domain entity). Hasta que Fase 2 los
+    // popule vía streaming SSE, la lista viene vacía — fallback al store
+    // local para que sesiones creadas en stub conserven su historial.
+    try {
+      const remote = await api
+        .get(`sessions/${sessionId}/messages`)
+        .json<AgentMessage[]>();
+      if (remote.length > 0) return remote;
+      return messagesStore.get(sessionId);
+    } catch (err) {
+      if (isHttp404(err)) return [];
+      throw err;
+    }
+  }
   return delay(messagesStore.get(sessionId));
 }
 
@@ -159,23 +246,39 @@ export async function getMessages(sessionId: string): Promise<AgentMessage[]> {
  * Persiste mensajes y mantiene en sync `messageCount` + `currentStage` +
  * `updatedAt` de la sesión. El caller filtra los mensajes en curso
  * (`status === "streaming"`) — solo se persiste estado terminal.
+ *
+ * Con backend real el persistido server-side llega vía SSE (Fase 2). Acá
+ * seguimos guardando en local para que un refresh recupere la conversación
+ * sin volver a transmitirla.
  */
 export async function saveMessages(
   sessionId: string,
   messages: AgentMessage[],
 ): Promise<void> {
   messagesStore.save(sessionId, messages);
-  const session = sessionsStore.get(sessionId);
-  if (session) {
-    const lastAgentWithStage = [...messages]
-      .reverse()
-      .find((m) => m.role === "agent" && m.stage !== null);
-    sessionsStore.upsert({
-      ...session,
-      messageCount: messages.length,
-      currentStage: lastAgentWithStage?.stage ?? session.currentStage,
-      updatedAt: new Date().toISOString(),
-    });
+  if (!USE_REAL_API) {
+    const session = sessionsStore.get(sessionId);
+    if (session) {
+      const lastAgentWithStage = [...messages]
+        .reverse()
+        .find((m) => m.role === "agent" && m.stage !== null);
+      sessionsStore.upsert({
+        ...session,
+        messageCount: messages.length,
+        currentStage: lastAgentWithStage?.stage ?? session.currentStage,
+        updatedAt: new Date().toISOString(),
+      });
+    }
   }
   return delay(undefined);
+}
+
+// ===========================================================================
+// Helpers
+// ===========================================================================
+
+function isHttp404(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { response?: { status?: number } };
+  return e.response?.status === 404;
 }
