@@ -169,7 +169,9 @@ sqa-knowledge-base/
 
 **Estado:** ✅ Completada · 2026-05-22
 
-Toda la fundación del backend que NO depende de decisiones pendientes de TI (PostgreSQL vs Azure SQL, LiteLLM, Entra ID App Registration). Cuando TI desbloquee, solo se agregan adapters concretos — domain, services, ports y middleware no cambian.
+Toda la fundación del backend que NO depende de decisiones pendientes de TI (LiteLLM, Entra ID App Registration). Cuando TI desbloquee, solo se agregan adapters concretos — domain, services, ports y middleware no cambian.
+
+> **Decisión cerrada 2026-05-22**: PostgreSQL Flexible Server + pgvector como base de datos productiva. Se descarta Azure SQL — el costo extra del adapter dual no compensa cuando pgvector resuelve hybrid search nativo. El `database_dialect` enum queda en código por si en un futuro lejano hace falta, pero no se implementa el adapter `azure_sql`.
 
 ### 1A.1 · Estructura Clean Architecture
 
@@ -237,9 +239,9 @@ Resultado: **frontend ↔ backend ↔ PostgreSQL funcionando localmente sin TI**
 Cuando TI confirme:
 
 - ⬜ Adapter `entra` para `TokenValidator` (JWKS cache 1h TTL, validación de claims `aud`, `iss`, `exp`, `oid`).
-- ⬜ Adapter `azure_sql` para repositorios (si TI elige Azure SQL en vez de PostgreSQL).
-- ⬜ Adapter `litellm` para `LlmGateway` (si TI provee proxy managed).
-- ⬜ Vista materializada `mv_dashboard_stats` (Postgres) o equivalente.
+- ⬜ Adapter `litellm` para `LlmGateway` (si TI provee proxy managed). Si no, queda en `anthropic_direct`.
+- ⬜ Vista materializada `mv_dashboard_stats` (PostgreSQL) — optimización de queries del dashboard.
+- ⬜ Provisioning real del Flexible Server (Bicep ya lo describe; falta que TI ejecute con `infra/main.bicep`).
 
 
 
@@ -1142,7 +1144,7 @@ Estas tareas requieren backend ya en marcha (Fase 1+) o son optimizaciones post-
 - ✅ Navegación por teclado completa — **integrado en 10B.1**
 
 ### Documentación
-- ⬜ ADRs finales (0002-pgvector → Azure SQL/AI Search según TI, 0003-container-apps, 0004-clean-arch, 0005-langgraph)
+- ⬜ ADRs finales (0002-pgvector confirmado vs Azure AI Search, 0003-container-apps, 0004-clean-arch, 0005-langgraph)
 - ⬜ Runbooks operativos
 - ⬜ Troubleshooting guides
 

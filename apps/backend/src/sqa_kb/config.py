@@ -40,15 +40,15 @@ class AppEnv(StrEnum):
 
 
 class DatabaseDialect(StrEnum):
-    """Stack de DB a usar. La decisión final la toma TI.
-
-    Ver `docs/alineacion-arquitectura-ti.md §2.2`. Mientras esa pregunta
-    no se cierre, el código mantiene ambas opciones soportadas — solo el
-    adapter concreto cambia.
+    """Stack de DB. **Decisión cerrada 2026-05-22**: PostgreSQL + pgvector
+    en local y en Azure (Flexible Server). Azure SQL queda solo como
+    placeholder histórico — no se implementa adapter `azure_sql`. Si en
+    un futuro lejano hubiera que migrar, el `database_url` + un segundo
+    adapter alcanzan; no requiere cambiar dominio ni puertos.
     """
 
     POSTGRES = "postgres"
-    AZURE_SQL = "azure_sql"
+    AZURE_SQL = "azure_sql"  # no soportado, ver docstring.
 
 
 class VectorStore(StrEnum):
