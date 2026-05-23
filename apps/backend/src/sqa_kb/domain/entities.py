@@ -23,7 +23,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    model_validator,
+)
 
 from sqa_kb.domain.value_objects import (
     ActivityType,
@@ -95,9 +101,13 @@ class User(_Base):
     created_at: datetime
     updated_at: datetime
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def is_admin(self) -> bool:
         """Compatibilidad con el frontend: True si Owner o GK Lead.
+
+        Decorado con `computed_field` para que aparezca en `.model_dump()`
+        y en la respuesta JSON del API — el frontend espera este campo.
 
         En servicios del backend, **NO usar `is_admin`** — usar los flags
         finos. Este property existe solo para hidratar el `AuthUser` que
