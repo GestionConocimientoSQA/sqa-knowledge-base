@@ -22,6 +22,7 @@ from sqa_kb.domain.entities import (
     Document,
     DocumentDetail,
     MyCapturesStats,
+    _Base,
 )
 from sqa_kb.domain.errors import ForbiddenError, NotFoundError
 from sqa_kb.domain.value_objects import CategoryCode, DocStatus, DocTypeCode
@@ -29,9 +30,10 @@ from sqa_kb.domain.value_objects import CategoryCode, DocStatus, DocTypeCode
 router = APIRouter(tags=["documents"])
 
 
-class PaginatedDocuments(BaseModel):
+class PaginatedDocuments(_Base):
     """Respuesta paginada — mismo shape que `PaginatedResult<DocumentItem>`
-    del frontend (`types/domain.ts`)."""
+    del frontend (`types/domain.ts`). Hereda de `_Base` para serializar
+    `has_more` ↔ `hasMore` automáticamente."""
 
     items: list[Document]
     total: int
@@ -40,7 +42,7 @@ class PaginatedDocuments(BaseModel):
     has_more: bool
 
 
-class MyCapturesResult(BaseModel):
+class MyCapturesResult(_Base):
     """Mismo shape que `MyCapturesResult` del frontend."""
 
     items: list[Document]

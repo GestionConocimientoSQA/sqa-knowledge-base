@@ -358,8 +358,7 @@ def to_activity_entity(model: models.RecentActivityModel) -> entities.RecentActi
     return entities.RecentActivityItem(
         id=model.id,
         type=ActivityType(model.type),
-        actor_oid=model.actor_oid,
-        actor_name=model.actor_name,
+        actor=entities.ActorRef(oid=model.actor_oid, name=model.actor_name),
         at=model.at,
         summary=model.summary,
         ref_url=model.ref_url,

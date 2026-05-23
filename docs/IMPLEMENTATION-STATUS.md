@@ -1,6 +1,6 @@
 # Estado de implementación · SQA Knowledge Base
 
-> **Última actualización:** 2026-05-19
+> **Última actualización:** 2026-05-22
 > **Documento vivo** — se actualiza al cierre de cada fase.
 > Fuente de verdad para `qué está hecho / en curso / pendiente`.
 
@@ -11,10 +11,10 @@
 | Timeline estimado total | 16-20 semanas |
 | Fases totales | 12 (Fase 0 a Fase 11) |
 | Fases completadas | **4** (Fase 0 + Fase 5 + Fase 6 + Fase 7) |
-| Fase actual | **Fase 1A ✅** (backend base sin TI · branch `fase-1-backend-base`) |
-| Próxima sub-fase | 1B-local — persistencia + auth dev + LLM directo (despliegue local sin TI) |
-| Bloqueo externo | Fase 1 (backend) espera App Registration en Entra ID por TI |
-| Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI esqueleto ✓ · Infra Bicep esqueleto ✓ |
+| Fase actual | **Fase 1B-local 🔄** (persistencia PG + dev auth + endpoints CRUD + frontend conectado · branch `fase-1-backend-local`) |
+| Próxima sub-fase | 1B.8 — smoke E2E con backend+frontend levantados + merge a master |
+| Bloqueo externo | Fase 1B-azure (Entra ID real) sigue esperando App Registration por TI |
+| Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI + PostgreSQL ✓ · Infra Bicep esqueleto ✓ |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
 
 ## Tabla de fases
@@ -215,17 +215,18 @@ Toda la fundación del backend que NO depende de decisiones pendientes de TI (Po
 
 **Validación:** `pytest -q` → **55/55 passed** en 1s. Resultado agregado a `docs/test-reports/test-runs.xlsx`.
 
-## Pendiente (sub-fase 1B-local)
+## Sub-fase 1B-local
 
 Despliegue local completo SIN depender de TI — `docker-compose up` + backend + frontend conectado. Cuando TI habilite, solo cambian env vars:
 
-- ⬜ **1B.1** Alembic + adapter PostgreSQL (`adapters/repositories/postgres/`) — SQLAlchemy 2.0 async + asyncpg + pgvector. Schema inicial + seeds.
-- ⬜ **1B.2** Dev auth provider (`adapters/auth/dev.py`) — acepta tokens fake del frontend stub MSAL solo si `app_env ∈ {dev, test}`.
-- ⬜ **1B.3** Adapter Blob → Azurite (`adapters/blob/azure.py`) — `azure-storage-blob`.
-- ⬜ **1B.4** Adapter LLM → Anthropic directo (`adapters/llm/anthropic_direct.py`) con la key personal de `credentials.env`.
-- ⬜ **1B.5** Endpoints CRUD básicos: `/auth/me`, `/users`, `/documents`, `/categories`.
-- ⬜ **1B.6** Conectar frontend al backend real (swap `lib/api/*` mocks por fetch al `:8000`).
-- ⬜ **1B.7** Tests integración + STATUS + merge.
+- ✅ **1B.1** Alembic + adapter PostgreSQL (`adapters/repositories/postgres/`) — SQLAlchemy 2.0 async + asyncpg + pgvector. Schema inicial + seeds.
+- ✅ **1B.2** Repositorios PostgreSQL (15 modelos, mappers domain↔ORM, tests integración).
+- ✅ **1B.3** Dev auth provider (`adapters/auth/dev.py`) — acepta `Bearer dev:{oid}` del frontend stub MSAL solo si `app_env ∈ {dev, test}`.
+- ⬜ **1B.4** Adapter Blob → Azurite (`adapters/blob/azure.py`) — `azure-storage-blob`. *(Diferida; no bloquea conexión frontend)*
+- ✅ **1B.5** Endpoints CRUD básicos: `/auth/me`, `/categories`, `/doc-types`, `/documents`, `/documents/{id}/authoritative`, `/my-captures`, `/sessions/*`, `/dashboard/{hot-topics,activity}`.
+- ⬜ **1B.6** Adapter LLM → Anthropic directo (`adapters/llm/anthropic_direct.py`) con la key personal de `credentials.env`. *(Diferida; Fase 2 lo necesita junto al agente)*
+- ✅ **1B.7** Conectar frontend al backend real — `USE_REAL_API` en `lib/api/client.ts` + dispatcher mock/real en `documents.ts`/`sessions.ts`/`auth.ts`. Backend serializa camelCase (`alias_generator=to_camel`) para que el contrato sea directo.
+- ⬜ **1B.8** Tests integración manuales (smoke con backend+frontend levantados) + STATUS + merge a master.
 
 ## Pendiente (sub-fase 1B-azure)
 

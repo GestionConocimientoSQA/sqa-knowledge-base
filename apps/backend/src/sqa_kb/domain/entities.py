@@ -30,6 +30,7 @@ from pydantic import (
     computed_field,
     model_validator,
 )
+from pydantic.alias_generators import to_camel
 
 from sqa_kb.domain.value_objects import (
     ActivityType,
@@ -53,7 +54,14 @@ Slug = Annotated[str, Field(pattern=r"^[A-Z0-9]+(-[A-Za-z0-9]+)*-\d{4}-\d{2}-\d{
 
 
 class _Base(BaseModel):
-    """Config común — `model_config` compartido entre entidades de salida."""
+    """Config común — `model_config` compartido entre entidades de salida.
+
+    Serializamos en **camelCase** porque el frontend (TS) usa camelCase en sus
+    tipos (`autorOid`, `hasMore`, `valueScore`, ...). Pydantic acepta también
+    snake_case al construir instancias en código Python (`populate_by_name`).
+    Así el dominio mantiene PEP 8 y el contrato HTTP queda directo al
+    frontend sin mappers manuales.
+    """
 
     model_config = ConfigDict(
         # Aceptar enum values además de instancias del enum al deserializar.
@@ -62,6 +70,12 @@ class _Base(BaseModel):
         frozen=False,
         # Validar también en asignaciones (no solo en construcción).
         validate_assignment=True,
+        # Mapeo snake_case (Python) ↔ camelCase (JSON al frontend). FastAPI
+        # serializa response models con `by_alias=True` por default, así que
+        # las respuestas salen en camelCase. `populate_by_name=True` deja que
+        # el dominio siga construyendo instancias en snake_case desde Python.
+        alias_generator=to_camel,
+        populate_by_name=True,
         # Documenta los ejemplos en /docs.
         json_schema_extra={"$comment": "SQA KB domain entity"},
     )
@@ -287,8 +301,10 @@ class Document(_Base):
     estado: DocStatus
     autor_oid: NonEmptyStr | None = None
     """Entra OID del autor. None solo para legacy migrados sin oid conocido."""
-    autor_name: NonEmptyStr
-    autor_role: NonEmptyStr
+    autor_name: NonEmptyStr = Field(alias="autor")
+    """Nombre del autor. El frontend lo lee como `autor` (display name)."""
+    autor_role: NonEmptyStr = Field(alias="rol")
+    """Rol del autor al momento de capturar. Frontend lo lee como `rol`."""
     fecha: datetime
     revision: datetime
     version: NonEmptyStr
@@ -301,7 +317,8 @@ class Document(_Base):
     """Chunks vectoriales del doc (Fase 3 RAG)."""
     paginas: int = Field(ge=0, default=0)
     formato: NonEmptyStr
-    aprobador_name: NonEmptyStr | None = None
+    aprobador_name: NonEmptyStr | None = Field(default=None, alias="aprobador")
+    """Nombre del aprobador. Frontend lo lee como `aprobador`."""
     fecha_aprobacion: datetime | None = None
     tags: list[str] = Field(default_factory=list)
     blob_path: NonEmptyStr | None = None
@@ -431,13 +448,24 @@ class HotTopic(_Base):
     is_gap: bool = False
 
 
+class ActorRef(_Base):
+    """Referencia compacta a un usuario — usada en feed de actividad.
+
+    El frontend espera `actor: { oid, name }` (no `actor_oid` + `actor_name`
+    sueltos), así que modelamos el dominio igual y dejamos al mapper armar
+    el `ActorRef` desde las columnas `actor_oid` + `actor_name` de la tabla.
+    """
+
+    oid: NonEmptyStr
+    name: NonEmptyStr
+
+
 class RecentActivityItem(_Base):
     """Item del feed de actividad reciente."""
 
     id: NonEmptyStr
     type: ActivityType
-    actor_oid: NonEmptyStr
-    actor_name: NonEmptyStr
+    actor: ActorRef
     at: datetime
     summary: NonEmptyStr
     ref_url: str | None = None

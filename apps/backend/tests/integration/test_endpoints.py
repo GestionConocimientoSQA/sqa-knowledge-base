@@ -218,7 +218,7 @@ def test_create_session_201(client: TestClient) -> None:
     body = response.json()
     assert body["mode"] == "captura"
     assert body["status"] == "active"
-    assert body["owner_oid"] == "stub-capturador-00000000"
+    assert body["ownerOid"] == "stub-capturador-00000000"
     assert body["title"] == "Nueva captura"
 
 
@@ -310,7 +310,7 @@ def test_list_sessions_only_returns_own(client: TestClient) -> None:
     body = response.json()
     own_ids = {s["id"] for s in body}
     assert capt_session["id"] in own_ids
-    assert all(s["owner_oid"] == "stub-capturador-00000000" for s in body)
+    assert all(s["ownerOid"] == "stub-capturador-00000000" for s in body)
 
 
 # ===========================================================================
@@ -328,7 +328,7 @@ def test_my_captures_returns_stats(client: TestClient) -> None:
     body = response.json()
     assert "items" in body
     assert "stats" in body
-    assert body["stats"]["total_captures"] == len(body["items"])
+    assert body["stats"]["totalCaptures"] == len(body["items"])
 
 
 # ===========================================================================

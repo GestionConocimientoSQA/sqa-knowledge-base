@@ -50,11 +50,13 @@ def test_me_with_capturador_token(client: TestClient) -> None:
     )
     assert response.status_code == 200
     body = response.json()
+    # El backend serializa en camelCase (alias_generator=to_camel) para que
+    # el frontend pueda usarlo sin mappers manuales.
     assert body["oid"] == "stub-capturador-00000000"
-    assert body["role_id"] == "capturador"
-    assert body["is_admin"] is False
-    assert body["puede_gobernar_taxonomia"] is False
-    assert body["puede_ver_metricas_globales"] is False
+    assert body["roleId"] == "capturador"
+    assert body["isAdmin"] is False
+    assert body["puedeGobernarTaxonomia"] is False
+    assert body["puedeVerMetricasGlobales"] is False
 
 
 def test_me_with_owner_token_returns_carpetas_owned(client: TestClient) -> None:
@@ -64,10 +66,10 @@ def test_me_with_owner_token_returns_carpetas_owned(client: TestClient) -> None:
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["role_id"] == "owner"
-    assert body["is_admin"] is True
-    assert "TEC" in body["carpetas_owned"]
-    assert "ARQ" in body["carpetas_owned"]
+    assert body["roleId"] == "owner"
+    assert body["isAdmin"] is True
+    assert "TEC" in body["carpetasOwned"]
+    assert "ARQ" in body["carpetasOwned"]
 
 
 def test_me_with_gklead_has_full_powers(client: TestClient) -> None:
@@ -77,10 +79,10 @@ def test_me_with_gklead_has_full_powers(client: TestClient) -> None:
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["role_id"] == "gklead"
-    assert body["is_admin"] is True
-    assert body["puede_gobernar_taxonomia"] is True
-    assert body["puede_ver_metricas_globales"] is True
+    assert body["roleId"] == "gklead"
+    assert body["isAdmin"] is True
+    assert body["puedeGobernarTaxonomia"] is True
+    assert body["puedeVerMetricasGlobales"] is True
 
 
 def test_me_propagates_request_id_to_error_payload(client: TestClient) -> None:
