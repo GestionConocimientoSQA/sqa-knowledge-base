@@ -1,28 +1,26 @@
 """Construcción del grafo principal del agente (LangGraph).
 
-Topología en 2.4 (subset del §16.3 del ROADMAP):
+Topología en 2.5 (cubre los 3 modos):
 
-    START
-      │
-      ▼
-  stage_dispatcher  ── decide qué nodo correr según `current_stage` + `mode`
-      │
-      ├─► welcome              (sesión nueva, sin mensajes de agente)
-      ├─► identification       (ETAPA_0 → ETAPA_1, modo capture)
-      ├─► free_capture         (ETAPA_1 → ETAPA_2, después de confirmar clasificación)
-      ├─► deep_dive            (ETAPA_2 → ETAPA_3, después de captura libre)
-      ├─► validation_summary   (ETAPA_3 → ETAPA_4, después de respuestas dirigidas)
-      ├─► generation           (ETAPA_4 → ETAPA_5, finaliza con score + index)
-      └─► END                  (consult / ingest aún no implementados — Fase 2.5)
+    START → stage_dispatcher → {
+      welcome              (sin agent msg todavía)
+      ┌── Modo A (capture)
+      │   identification    (ETAPA 0 → 1)
+      │   free_capture      (ETAPA 1 → 2)        ─┐ Command(goto)
+      │   deep_dive         (ETAPA 2 → 3)        ─┤ chain en mismo turno
+      │   validation_summary(ETAPA 3 → 4)        ─┤
+      │   generation        (ETAPA 4 → 5, final) ─┘
+      ├── Modo B (consultation)
+      │   consultation      (single node, loop por turno)
+      └── Modo C (ingestion)
+          ingestion_classify       ─┐ chain
+          ingestion_traceability   ─┤ Command(goto)
+          index_ingestion          ─┘
+    }
 
-**Patrón**: cada nodo es "una vuelta del agente". Toda invocación nueva
-del grafo entra por START, el dispatcher elige el nodo apropiado según el
-estado restaurado del checkpointer, ese nodo emite su mensaje y termina
-en END. El SSE orquestador (Fase 2.6) re-invoca con cada nuevo mensaje
-del usuario.
-
-`generation` es la única cadena interna (sin pause): emite el documento
-generado, scorea y persiste de un tirón antes de cerrar la sesión.
+Cada nodo termina en END (una vuelta por invoke). El dispatcher routea
+por `awaiting_confirmation` (source of truth de qué nodo está esperando
+al usuario). Las transiciones intra-turno usan `Command(goto=...)`.
 """
 
 from __future__ import annotations
@@ -32,16 +30,23 @@ from typing import TYPE_CHECKING
 from langgraph.graph import END, START, StateGraph
 
 from sqa_kb.agent.nodes import (
+    make_consultation_node,
     make_deep_dive_node,
     make_free_capture_node,
     make_generation_node,
     make_identification_node,
+    make_index_ingestion_node,
+    make_ingestion_classify_node,
+    make_ingestion_traceability_node,
     make_validation_summary_node,
     make_welcome_node,
 )
 from sqa_kb.agent.state import AgentState
 from sqa_kb.ports.gateways import LlmGateway
-from sqa_kb.ports.repositories import DocumentRepository
+from sqa_kb.ports.repositories import (
+    DocumentRepository,
+    IngestionRepository,
+)
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -49,7 +54,7 @@ if TYPE_CHECKING:
 
 
 # ===========================================================================
-# Dispatcher
+# Routing
 # ===========================================================================
 
 
@@ -57,61 +62,78 @@ def _has_agent_msg(state: AgentState) -> bool:
     return any(m.get("role") == "agent" for m in state.messages)
 
 
-# Mapping: cuando un nodo emite un mensaje y queda esperando respuesta del
-# usuario, el `awaiting_confirmation` indica qué nodo debe procesar la
-# próxima entrada. Este es el routing principal del grafo turno a turno.
-_AWAITING_TO_NODE: dict[str, str] = {
-    "mode_choice": "identification",      # welcome → identificar topic
-    "topic": "identification",            # identification preguntó el topic
-    "classification": "free_capture",     # identification propuso → confirmar
-    "update_decision": "free_capture",    # duplicate → decidir update/complement
-    "free_capture_more": "free_capture",  # free_capture pidió contenido
-    "deep_dive_answers": "deep_dive",     # deep_dive emitió preguntas
-    "summary": "validation_summary",      # validation mostró resumen → confirmar
+# Modo A (capture): awaiting_confirmation → nodo.
+_CAPTURE_AWAITING_TO_NODE: dict[str, str] = {
+    "mode_choice": "identification",
+    "topic": "identification",
+    "classification": "free_capture",
+    "update_decision": "free_capture",
+    "free_capture_more": "free_capture",
+    "deep_dive_answers": "deep_dive",
+    "summary": "validation_summary",
+}
+
+# Modo B (consultation): awaiting → nodo.
+_CONSULT_AWAITING_TO_NODE: dict[str, str] = {
+    "mode_choice": "consultation",
+    "consult_more": "consultation",
+}
+
+# Modo C (ingestion): awaiting → nodo.
+_INGEST_AWAITING_TO_NODE: dict[str, str] = {
+    "mode_choice": "ingestion_classify",
+    "ingest_meta": "ingestion_traceability",
 }
 
 
 def _stage_dispatcher(state: AgentState) -> str:
-    """Decide el próximo nodo según `awaiting_confirmation` (source of truth
-    de qué nodo está esperando la entrada del usuario).
+    """Decide el próximo nodo según `mode` + `awaiting_confirmation`.
 
-    Lógica:
-    - Sin mensajes de agente todavía → `welcome` (entrada inicial).
-    - Modos B/C: salimos a END en 2.4 (branches en 2.5).
-    - `awaiting_confirmation` mapeado → ese nodo procesa la respuesta.
-    - Sin awaiting (estado intermedio post-chain) → derivamos del stage:
-      ETAPA_4 sin awaiting ⇒ summary ya fue validado, toca `generation`.
-    - Cualquier otro caso → END (sesión cerrada o estado inesperado).
+    - Sin agent msg → welcome (entrada inicial).
+    - `awaiting=error` → END (sesión cerrada por error).
+    - Por modo, mapeo awaiting → nodo. Si no matchea → END.
+
+    Caso especial Modo A: stage=ETAPA_4 sin summary_validated y sin
+    awaiting → re-emite el resumen (post-checkpoint resume edge).
     """
     if not _has_agent_msg(state):
         return "welcome"
 
-    if state.mode != "capture":
-        return END
-
     awaiting = state.awaiting_confirmation
-    if awaiting is not None and awaiting in _AWAITING_TO_NODE:
-        return _AWAITING_TO_NODE[awaiting]
     if awaiting == "error":
         return END
 
-    # Sin awaiting explícito: chequeamos si quedó algún stage pendiente.
+    if state.mode == "consultation":
+        if awaiting is not None and awaiting in _CONSULT_AWAITING_TO_NODE:
+            return _CONSULT_AWAITING_TO_NODE[awaiting]
+        return END
+
+    if state.mode == "ingestion":
+        if awaiting is not None and awaiting in _INGEST_AWAITING_TO_NODE:
+            return _INGEST_AWAITING_TO_NODE[awaiting]
+        return END
+
+    # Modo A — capture
+    if awaiting is not None and awaiting in _CAPTURE_AWAITING_TO_NODE:
+        return _CAPTURE_AWAITING_TO_NODE[awaiting]
+    # Fallback: stage=ETAPA_4 sin validar → re-emite resumen.
     if state.current_stage == "ETAPA_4" and not state.summary_validated:
         return "validation_summary"
-
     return END
 
 
-# Mapeo identidad — el dispatcher devuelve el nombre del nodo y LangGraph
-# necesita el dict explícito en `add_conditional_edges`. Solo nodos a los
-# que el dispatcher puede saltar directo (NO `generation`, que se alcanza
-# vía `Command(goto=...)` desde `validation_summary`).
+# Mapeo identidad — los nodos a los que el dispatcher salta directo. Los
+# nodos alcanzados solo vía `Command(goto=...)` (generation, index_ingestion)
+# NO van acá.
 _DISPATCH_MAP = {
     "welcome": "welcome",
     "identification": "identification",
     "free_capture": "free_capture",
     "deep_dive": "deep_dive",
     "validation_summary": "validation_summary",
+    "consultation": "consultation",
+    "ingestion_classify": "ingestion_classify",
+    "ingestion_traceability": "ingestion_traceability",
     END: END,
 }
 
@@ -125,16 +147,21 @@ def build_graph(
     *,
     gateway: LlmGateway,
     document_repo: DocumentRepository,
+    ingestion_repo: IngestionRepository | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
 ) -> CompiledStateGraph:
     """Construye y compila el grafo del agente.
 
+    `ingestion_repo` es opcional para que tests de Modo A no necesiten
+    inyectarlo. Si el grafo se invoca en modo C sin repo, el nodo
+    `index_ingestion` falla con last_error.
+
     `checkpointer` opcional para tests unitarios — en runtime se pasa el
-    `AsyncPostgresSaver` del lifespan del app.
+    `AsyncPostgresSaver` del lifespan.
     """
     graph = StateGraph(AgentState)
 
-    # Nodos
+    # Modo A
     graph.add_node("welcome", make_welcome_node())
     graph.add_node(
         "identification",
@@ -148,13 +175,44 @@ def build_graph(
         make_generation_node(gateway=gateway, document_repo=document_repo),
     )
 
-    # Routing: START → dispatcher → nodo correspondiente → END (una vuelta).
+    # Modo B
+    graph.add_node(
+        "consultation",
+        make_consultation_node(gateway=gateway, document_repo=document_repo),
+    )
+
+    # Modo C
+    graph.add_node(
+        "ingestion_classify",
+        make_ingestion_classify_node(gateway=gateway),
+    )
+    graph.add_node(
+        "ingestion_traceability",
+        make_ingestion_traceability_node(),
+    )
+    if ingestion_repo is not None:
+        graph.add_node(
+            "index_ingestion",
+            make_index_ingestion_node(
+                document_repo=document_repo, ingestion_repo=ingestion_repo
+            ),
+        )
+
+    # Routing
     graph.add_conditional_edges(START, _stage_dispatcher, _DISPATCH_MAP)
-    graph.add_edge("welcome", END)
-    graph.add_edge("identification", END)
-    graph.add_edge("free_capture", END)
-    graph.add_edge("deep_dive", END)
-    graph.add_edge("validation_summary", END)
-    graph.add_edge("generation", END)
+    for node_name in (
+        "welcome",
+        "identification",
+        "free_capture",
+        "deep_dive",
+        "validation_summary",
+        "generation",
+        "consultation",
+        "ingestion_classify",
+        "ingestion_traceability",
+    ):
+        graph.add_edge(node_name, END)
+    if ingestion_repo is not None:
+        graph.add_edge("index_ingestion", END)
 
     return graph.compile(checkpointer=checkpointer)

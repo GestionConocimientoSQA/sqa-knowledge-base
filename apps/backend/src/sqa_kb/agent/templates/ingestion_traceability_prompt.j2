@@ -1,0 +1,15 @@
+{# Modo C — prompt para metadata de trazabilidad.
+
+Recibe:
+- classification: con .category, .document_type.
+#}
+Para ingresar este documento al KB necesito un poco de contexto de origen.
+
+Decime en una sola respuesta:
+
+1. **Quién lo aprobó** (nombre completo o rol).
+2. **Cuándo se aprobó** (fecha en formato YYYY-MM-DD).
+3. **Fuente original** (URL, SharePoint, ruta, etc. — opcional pero útil).
+4. **Versión** (si aplica — opcional).
+
+Voy a archivar el documento como **{{ classification.document_type }}** en la carpeta **{{ classification.category }}**.

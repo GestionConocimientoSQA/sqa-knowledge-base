@@ -1,0 +1,19 @@
+{# Modo C — propuesta de clasificación para un doc ingerido.
+
+Recibe:
+- classification: con .category, .document_type, .confidence, .reasoning.
+- preview: primeros caracteres del texto extraído (para que el user
+  confirme que es el doc correcto).
+#}
+Recibí el documento. Acá va una muestra de lo que extraje:
+
+> {{ preview }}
+
+Mi propuesta de clasificación:
+- **Carpeta**: {{ classification.category }}
+- **Tipo de documento**: {{ classification.document_type }}
+- **Confianza**: {{ "%.0f%%" | format(classification.confidence * 100) }}
+
+Razonamiento: {{ classification.reasoning }}
+
+Si está bien, mandame los datos de trazabilidad ahora.

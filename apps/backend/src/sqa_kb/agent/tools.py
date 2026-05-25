@@ -28,7 +28,12 @@ import json
 import logging
 from collections.abc import Sequence
 
-from sqa_kb.agent.state import CaptureScoring, Classification, ExistingDocument
+from sqa_kb.agent.state import (
+    CaptureScoring,
+    Citation,
+    Classification,
+    ExistingDocument,
+)
 from sqa_kb.ports.gateways import ChatMessage, LlmGateway
 from sqa_kb.ports.repositories import DocumentRepository
 
@@ -228,6 +233,103 @@ def _parse_scoring(raw: str) -> CaptureScoring:
             data["value_score"] = 1.0
 
     return CaptureScoring.model_validate(data)
+
+
+# ===========================================================================
+# synthesize_consultation_answer (Fase 2.5 — modo B)
+# ===========================================================================
+
+
+_SYNTHESIS_SYSTEM_PROMPT = """\
+Sos un asistente del KB de SQA respondiendo consultas. Te paso una
+pregunta del usuario y los fragmentos (chunks) más relevantes del KB.
+
+Reglas:
+- Respondé en español neutro, técnico, directo. SIN preámbulos como
+  "claro" o "por supuesto".
+- Citá los documentos usando `[doc:document_id]` en el texto donde
+  corresponda — el frontend resuelve la cita.
+- Si los fragmentos no responden la pregunta, decilo explícito: "No
+  encontré información directa sobre X en el KB" + sugerí captura.
+- NO inventes datos, nombres de personas, fechas. Si la respuesta requiere
+  algo que no está en los chunks, decilo.
+- Una respuesta concisa vale más que una larga.
+"""
+
+
+async def synthesize_consultation_answer(
+    gateway: LlmGateway,
+    *,
+    query: str,
+    chunks: Sequence[dict[str, str]],
+    model: str | None = None,
+) -> str:
+    """Pide al LLM una respuesta sintetizada para una consulta + chunks del KB.
+
+    `chunks`: lista de dicts con keys `document_id`, `content`, `section_title`
+    (opcional). Es lo que el retriever (Fase 3) devuelve normalizado.
+
+    Devuelve el texto plano del LLM — el caller arma las citaciones
+    aparte (basándose en los chunks consumidos).
+
+    Lanza `ValueError` si la pregunta está vacía.
+    """
+    if not query.strip():
+        raise ValueError("query vacía — el sintetizador necesita una pregunta")
+
+    chunks_block = _format_chunks(chunks)
+    user_prompt = (
+        f"Pregunta del usuario:\n{query}\n\n"
+        f"Fragmentos del KB:\n{chunks_block}"
+    )
+    messages: list[ChatMessage] = [
+        ChatMessage(role="system", content=_SYNTHESIS_SYSTEM_PROMPT),
+        ChatMessage(role="user", content=user_prompt),
+    ]
+    completion = await gateway.complete(
+        messages,
+        model=model,
+        max_tokens=1024,
+        temperature=0.3,  # algo creativo pero anclado a los chunks
+    )
+    return completion.text.strip()
+
+
+def _format_chunks(chunks: Sequence[dict[str, str]]) -> str:
+    """Convierte los chunks en un bloque markdown para el prompt del LLM."""
+    if not chunks:
+        return "(sin resultados — el KB no tiene info directa)"
+    parts: list[str] = []
+    for idx, c in enumerate(chunks, start=1):
+        section = c.get("section_title") or ""
+        section_suffix = f" — *{section}*" if section else ""
+        doc_id = c.get("document_id", "?")
+        content = c.get("content", "")
+        parts.append(f"[{idx}] [doc:{doc_id}]{section_suffix}\n{content}")
+    return "\n\n".join(parts)
+
+
+def build_citations_from_results(
+    chunks: Sequence[dict[str, str]],
+) -> list[Citation]:
+    """Convierte chunks en `Citation` para guardar en state.
+
+    Asigna `position` por orden recibido (1-indexed, espejo de cómo el
+    LLM los referencia con [1], [2], ...).
+    """
+    out: list[Citation] = []
+    for idx, c in enumerate(chunks, start=1):
+        out.append(
+            Citation(
+                document_id=c.get("document_id", "?"),
+                filename=c.get("filename", c.get("document_id", "?") + ".md"),
+                chunk_id=c.get("chunk_id", f"chunk-{idx}"),
+                section=c.get("section_title") or None,
+                snippet=(c.get("content", "")[:200]),
+                position=idx,
+            )
+        )
+    return out
 
 
 def _parse_classification(raw: str) -> Classification:

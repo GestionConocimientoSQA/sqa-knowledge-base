@@ -159,10 +159,47 @@ def test_dispatcher_routes_consultation_after_welcome_to_end() -> None:
     assert _stage_dispatcher(state) == END
 
 
-def test_dispatcher_routes_ingestion_after_welcome_to_end() -> None:
+def test_dispatcher_routes_consultation_with_mode_choice_to_consultation() -> None:
+    """En 2.5 modo B: awaiting=mode_choice + mode=consultation → consultation."""
+    state = _state("consultation")
+    state.messages = [{"role": "agent", "content": "hi", "stage": "ETAPA_0"}]
+    state.awaiting_confirmation = "mode_choice"
+    assert _stage_dispatcher(state) == "consultation"
+
+
+def test_dispatcher_routes_consultation_with_consult_more() -> None:
+    state = _state("consultation")
+    state.messages = [{"role": "agent", "content": "hi", "stage": "consult_search"}]
+    state.awaiting_confirmation = "consult_more"
+    assert _stage_dispatcher(state) == "consultation"
+
+
+def test_dispatcher_routes_consultation_unknown_awaiting_to_end() -> None:
+    state = _state("consultation")
+    state.messages = [{"role": "agent", "content": "hi", "stage": "x"}]
+    state.awaiting_confirmation = "weird"
+    assert _stage_dispatcher(state) == END
+
+
+def test_dispatcher_routes_ingestion_after_welcome_to_classify() -> None:
+    """En 2.5 modo C: awaiting=mode_choice + mode=ingestion → ingestion_classify."""
     state = _state("ingestion")
     state.messages = [{"role": "agent", "content": "hi", "stage": "ETAPA_0"}]
-    state.current_stage = "ETAPA_0"
+    state.awaiting_confirmation = "mode_choice"
+    assert _stage_dispatcher(state) == "ingestion_classify"
+
+
+def test_dispatcher_routes_ingestion_with_meta_to_traceability() -> None:
+    state = _state("ingestion")
+    state.messages = [{"role": "agent", "content": "hi", "stage": "classify_ingest"}]
+    state.awaiting_confirmation = "ingest_meta"
+    assert _stage_dispatcher(state) == "ingestion_traceability"
+
+
+def test_dispatcher_routes_ingestion_unknown_awaiting_to_end() -> None:
+    state = _state("ingestion")
+    state.messages = [{"role": "agent", "content": "hi", "stage": "x"}]
+    state.awaiting_confirmation = "weird"
     assert _stage_dispatcher(state) == END
 
 
@@ -373,8 +410,9 @@ async def test_capture_flow_multi_turn_reaches_generation() -> None:
     assert "score" in gateway.calls
 
 
-async def test_consultation_flow_stops_after_welcome() -> None:
-    """Modo B en 2.4: solo welcome ejecuta."""
+async def test_consultation_flow_invokes_consultation_node() -> None:
+    """Modo B en 2.5: después de welcome, el dispatcher routea a `consultation`
+    cuando el usuario manda su pregunta."""
     gateway = _FakeGateway()
     repo = _FakeDocRepo()
     graph = build_graph(
@@ -389,7 +427,7 @@ async def test_consultation_flow_stops_after_welcome() -> None:
 
     # Turno 0: welcome
     await graph.ainvoke(state, config=config)
-    # Turno 1: ningún branch implementado → END sin tocar nodo nuevo
+    # Turno 1: user pregunta → dispatcher routea a consultation
     await graph.ainvoke(
         {"messages": [{"role": "user", "content": "qué es flaky", "stage": None}]},
         config=config,
@@ -398,8 +436,9 @@ async def test_consultation_flow_stops_after_welcome() -> None:
     agent_stages = [
         m.get("stage") for m in final.values["messages"] if m.get("role") == "agent"
     ]
-    # Solo ETAPA_0 — ningún otro stage debería estar.
-    assert agent_stages == ["ETAPA_0"]
+    assert "ETAPA_0" in agent_stages
+    assert "consult_search" in agent_stages
+    assert final.values["current_query"] == "qué es flaky"
 
 
 # ===========================================================================
