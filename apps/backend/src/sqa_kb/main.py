@@ -69,11 +69,13 @@ from sqa_kb.api.queries import router as queries_router
 from sqa_kb.api.sessions import router as sessions_router
 from sqa_kb.api.sse import SseEventBuffer
 from sqa_kb.api.taxonomy import router as taxonomy_router
+from sqa_kb.adapters.repositories.postgres.chunks import PostgresChunkRepository
 from sqa_kb.config import LlmGatewayKind, Settings, get_settings
-from sqa_kb.rag.hybrid_search import HybridSearcher
 from sqa_kb.middleware.error_handler import register_error_handlers
 from sqa_kb.middleware.request_id import RequestIdMiddleware
 from sqa_kb.observability.logging import configure_logging, get_logger
+from sqa_kb.rag.hybrid_search import HybridSearcher
+from sqa_kb.rag.indexer import Indexer
 
 
 def _wire_persistence(app: FastAPI, settings: Settings) -> None:
@@ -111,13 +113,18 @@ def _wire_persistence(app: FastAPI, settings: Settings) -> None:
 
 
 def _wire_search(app: FastAPI, settings: Settings) -> None:
-    """Inicializa el embedder + HybridSearcher (Fase 3.5).
+    """Inicializa embedder + HybridSearcher + Indexer (Fase 3.5/3.6).
 
     Requiere `session_factory` (de `_wire_persistence`) + `cohere_api_key`.
     Si falta la key, saltea el wiring; el endpoint `/queries` y los nodos
     del agente que dependan del searcher devolverán 500 con mensaje claro
     vía `_from_state`. Los tests unitarios inyectan fakes y no necesitan
     este wiring.
+
+    El `Indexer` (Fase 3.6) comparte el embedder con el searcher para
+    no duplicar conexión a Cohere. `build_graph` lo recibe y se lo pasa
+    a los nodos `generation` (modo A) y `index_ingestion` (modo C) que
+    indexan al cierre de cada flujo.
     """
     if getattr(app.state, "session_factory", None) is None:
         return
@@ -132,8 +139,16 @@ def _wire_search(app: FastAPI, settings: Settings) -> None:
         embedder=embedder,
         session_factory=app.state.session_factory,
     )
+    chunk_repo = PostgresChunkRepository(app.state.session_factory)
+    indexer = Indexer(
+        embedder=embedder,
+        chunk_repo=chunk_repo,
+        document_repo=app.state.document_repo,
+    )
     app.state.embedder = embedder
     app.state.kb_searcher = searcher
+    app.state.chunk_repo = chunk_repo
+    app.state.indexer = indexer
 
 
 async def _wire_agent(app: FastAPI, settings: Settings) -> CheckpointerBundle | None:
@@ -176,6 +191,7 @@ async def _wire_agent(app: FastAPI, settings: Settings) -> CheckpointerBundle | 
         document_repo=app.state.document_repo,
         searcher=app.state.kb_searcher,
         ingestion_repo=app.state.ingestion_repo,
+        indexer=app.state.indexer,
         checkpointer=bundle.saver,
     )
 

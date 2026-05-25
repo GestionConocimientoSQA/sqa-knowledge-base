@@ -441,3 +441,107 @@ async def test_generation_marks_anonymized_when_reusable() -> None:
     await node(state)
     created = repo.created[0]
     assert created.anonimizado is True
+
+
+# ===========================================================================
+# generation — hook indexer (Fase 3.6)
+# ===========================================================================
+
+
+@dataclass
+class _FakeIndexer:
+    """Fake mínimo del `Indexer` para verificar el hook del nodo."""
+
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    should_fail: bool = False
+
+    async def index_document(
+        self, document_id: str, *, sections, text=None, replace=True  # type: ignore[no-untyped-def]
+    ):
+        self.calls.append(
+            {
+                "document_id": document_id,
+                "sections": list(sections),
+                "text": text,
+                "replace": replace,
+            }
+        )
+        if self.should_fail:
+            raise RuntimeError("indexer down")
+        from sqa_kb.rag.indexer import IndexerResult
+
+        return IndexerResult(
+            document_id=document_id,
+            chunks_created=2,
+            tokens_embedded=20,
+            cost_usd=0.0001,
+            sub_batches=1,
+            replaced_old_chunks=0,
+        )
+
+
+async def test_generation_calls_indexer_when_configured() -> None:
+    """Hook RAG: si hay indexer cableado, dispara index_document_background
+    con el content markdown como única Section."""
+    state = _state_with_classification()
+    state.free_capture_blocks = ["contenido capturado"]
+    indexer = _FakeIndexer()
+    node = make_generation_node(
+        gateway=_FakeGateway(),  # type: ignore[arg-type]
+        document_repo=_FakeDocRepo(),  # type: ignore[arg-type]
+        indexer=indexer,  # type: ignore[arg-type]
+    )
+    update = await node(state)
+
+    assert update["generated_document_id"] is not None
+    # El indexer fue llamado con el id del doc generado.
+    assert len(indexer.calls) == 1
+    call = indexer.calls[0]
+    assert call["document_id"] == update["generated_document_id"]
+    # 1 Section con el markdown completo.
+    assert len(call["sections"]) == 1
+    section = call["sections"][0]
+    assert section.title == "Flaky tests en CI"
+    # El content del Section es el markdown renderizado (contiene el title).
+    assert "Flaky tests en CI" in section.content
+
+
+async def test_generation_no_indexer_no_op() -> None:
+    """Sin indexer (back-compat), el nodo no intenta indexar."""
+    state = _state_with_classification()
+    state.free_capture_blocks = ["x"]
+    node = make_generation_node(
+        gateway=_FakeGateway(),  # type: ignore[arg-type]
+        document_repo=_FakeDocRepo(),  # type: ignore[arg-type]
+        # sin indexer
+    )
+    update = await node(state)
+    # El nodo cerró OK sin haber tocado ningún indexer.
+    assert update["generated_document_id"] is not None
+    assert update["current_stage"] == "ETAPA_5"
+
+
+async def test_generation_indexer_failure_does_not_break_response() -> None:
+    """Si el indexer falla, el flujo del agente igual cierra OK.
+
+    `index_document_background` swallow excepciones — el usuario ve el
+    doc creado aunque el RAG no se haya enterado. Se puede reintentar
+    con `scripts/reindex_all.py`.
+    """
+    state = _state_with_classification()
+    state.free_capture_blocks = ["x"]
+    indexer = _FakeIndexer(should_fail=True)
+    node = make_generation_node(
+        gateway=_FakeGateway(),  # type: ignore[arg-type]
+        document_repo=_FakeDocRepo(),  # type: ignore[arg-type]
+        indexer=indexer,  # type: ignore[arg-type]
+    )
+    update = await node(state)
+
+    # El doc se creó, el response salió.
+    assert update["generated_document_id"] is not None
+    assert update["current_stage"] == "ETAPA_5"
+    # El indexer fue intentado.
+    assert len(indexer.calls) == 1
+    # NO hay last_error — la indexación es no-bloqueante.
+    assert "last_error" not in update or not update.get("last_error")

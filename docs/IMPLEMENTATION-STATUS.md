@@ -1,6 +1,6 @@
 # Estado de implementación · SQA Knowledge Base
 
-> **Última actualización:** 2026-05-25 (Fase 3 en progreso · 3.0/3.1/3.2/3.3/3.4/3.5 cerradas, 3.6-3.7 pendientes)
+> **Última actualización:** 2026-05-25 (Fase 3 en progreso · 3.0-3.6 cerradas, solo 3.7 pendiente)
 > **Documento vivo** — se actualiza al cierre de cada fase.
 > Fuente de verdad para `qué está hecho / en curso / pendiente`.
 
@@ -9,13 +9,13 @@
 | Indicador | Valor |
 |---|---|
 | Timeline estimado total | 16-20 semanas |
-| Avance ponderado | **~72% del proyecto total** (≈14.5 de 20 semanas-equivalentes) |
+| Avance ponderado | **~75% del proyecto total** (≈15 de 20 semanas-equivalentes) |
 | Fases completadas | **9** (Fase 0, 1A, 1B-local, 2, 5, 6, 7, 10A, 10B) |
-| Fase actual | **Fase 3 · RAG vectorial 🔄** — sub-fases 3.0/3.1/3.2/3.3/3.4/3.5 cerradas, 3.6-3.7 pendientes · branch `fase-3-rag-vectorial` (NO mergeado a master) |
-| Próxima sub-fase | **3.6** — Script `reindex_all.py` + hooks de indexación desde generation/index_ingestion |
+| Fase actual | **Fase 3 · RAG vectorial 🔄** — sub-fases 3.0-3.6 cerradas, solo 3.7 pendiente · branch `fase-3-rag-vectorial` (NO mergeado a master) |
+| Próxima sub-fase | **3.7** — Eval set + métricas (recall@5, precision@1) + STATUS + merge a master |
 | Bloqueo externo | Fase 1B-azure (Entra ID real) sigue esperando App Registration por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI + PostgreSQL + agente LangGraph ✓ · Infra Bicep esqueleto ✓ |
-| Tests totales | 596 backend + 220 frontend = **816 tests verdes** |
+| Tests totales | 622 backend + 220 frontend = **842 tests verdes** |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
 
 ## Tabla de fases
@@ -25,7 +25,7 @@
 | **0** | **Fundación (monorepo + infra + Azure)** | **1** | **✅ Completada** | **100%** |
 | **1** | **Backend · Persistencia + Auth (1A + 1B-local)** | **2-3** | **✅ Completada (excepto 1B-azure)** | Clean Architecture + PG real + dev auth + endpoints CRUD + frontend conectado. 1B-azure (Entra ID real) bloqueado por TI. |
 | **2** | **Backend · Agente LangGraph (ETAPAS)** | **4-6** | **✅ Completada** | Adapter LLM + AgentState + checkpointer + grafo + 3 modos + endpoint SSE con 14 eventos. 420 tests. |
-| **3** | **Backend · RAG vectorial** | **7-8** | **🔄 En progreso (85%)** | 3.0 adapter Cohere + 3.1 chunker + 3.2 indexer + 3.3 retriever HNSW + 3.4 hybrid search + 3.5 endpoint /queries + search_kb real cerradas. Faltan 3.6-3.7 (reindex script + eval). 596 tests. |
+| **3** | **Backend · RAG vectorial** | **7-8** | **🔄 En progreso (95%)** | 3.0 adapter Cohere + 3.1 chunker + 3.2 indexer + 3.3 retriever HNSW + 3.4 hybrid search + 3.5 endpoint /queries + 3.6 reindex_all + hooks generation/ingestion cerradas. Falta solo 3.7 (eval set). 622 tests. |
 | 4 | Backend · Generación y extracción de docs | 9-10 | ⬜ Pendiente | 0% |
 | **5** | **Frontend · Fundación (UI + auth stub)** | **11-12** | **✅ Completada** | **100%** |
 | **6** | **Frontend · Chat streaming SSE (con mock-transport)** | **13-14** | **✅ Completada** | **100%** |
@@ -476,11 +476,34 @@ Indexación de documentos + búsqueda semántica con boost de autoritativos. Lat
 - **`GET /documents/search` se deja en stub ILIKE** — funciona para el Explorer del frontend; migrar a hybrid se hará en 3.7 si el eval set lo justifica.
 - **Sin tests de wiring de `_wire_search`** — es trivial (sin key → skip, con key → construye). Cubierto implícitamente al correr el backend en dev.
 
-### ⬜ 3.6 — Script `reindex_all.py` + hooks de indexación (pendiente)
+### ✅ 3.6 — Script `reindex_all.py` + hooks de indexación (cerrada)
 
-- `scripts/reindex_all.py` para batch (todos los docs / subset por filtro).
-- Hooks desde `agent/nodes/generation.py` (modo A) y `agent/nodes/index_ingestion.py` (modo C) que disparan `index_document_background` al finalizar el flujo.
-- Tests con mock embedder.
+- **Hook en `make_generation_node` (modo A)**: kwarg `indexer: Indexer | None = None`. Si está, awaitea `index_document_background(indexer, doc.id, sections=[Section(title=titulo, content=markdown_content)])` tras crear el `Document`. **El content del modo A está vivo solo en memoria** (no se persiste en `documents`) — este hook es la única oportunidad de meterlo al RAG hasta que Fase 4 cablee Blob. `indexer=None` mantiene back-compat.
+- **Hook en `make_index_ingestion_node` (modo C)**: idem con `Section(title=titulo, content=state.extracted_text)`. Si la persistencia del `Document` falla, NO se intenta indexar (no tiene sentido sin doc).
+- **No-bloqueante**: `index_document_background` swallow excepciones + loggea. Si Cohere/DB falla en la indexación, el usuario ve el doc creado igual; se puede reintentar con `reindex_all`.
+- **`graph.build_graph` acepta `indexer: Indexer | None = None`** y lo propaga a ambos nodos.
+- **`src/sqa_kb/rag/reindex.py`**: lógica reusable de la corrida batch. Función `reindex()` async con todas las dependencias inyectadas (repo, indexer, text_source). Itera con `repo.search()` paginado. Resiliente: un doc fallido NO aborta el batch — se loggea y sigue. `ReindexStats` (frozen) reporta `docs_processed`/`docs_indexed`/`docs_skipped`/`docs_failed`/`chunks_created`/`tokens_embedded`/`cost_usd` + `has_errors` property.
+- **`text_source` async inyectable** (decisión técnica clave): `Callable[[DocumentRepository, Document], Awaitable[(sections, text)]]`. Como `Document` Pydantic NO expone `resumen` (vive en `DocumentDetail`), el text_source default hace `repo.get_detail(doc.id)` y usa el resumen. Fase 4 reemplaza con uno que baje el blob.
+- **CLI thin `scripts/reindex_all.py`**: argparse con `--carpeta`, `--tipo`, `--batch-size`, `--dry-run`. Construye `CohereEmbedder + Indexer + PostgresDocumentRepository`, llama `reindex()`, imprime stats. Exit codes: 0 OK, 1 con errores, 2 config inválida, 3 crash inesperado. `--dry-run` no requiere `cohere_api_key`.
+- **Wiring `_wire_search` extendido**: ahora también construye `Indexer(embedder, chunk_repo, document_repo)` y lo deja en `app.state.indexer`. `build_graph` recibe ese indexer en runtime.
+
+**26 tests nuevos (596 → 622):**
+
+| Archivo | Tests | Cubre |
+|---|---:|---|
+| `tests/test_rag_reindex.py` | **18** | `_default_text_source` (resumen → Section, resumen vacío/whitespace/orphan doc → empty), reindex paginación (single page, multi-page con offsets correctos, short page corta el loop), filtros carpetas/tipos propagan al `search()`, skip de docs sin texto + warning, `--dry-run` no llama al indexer pero cuenta, resiliencia (un fallo no aborta el batch, indexer.calls incluye los 3 intentos), text_source rota cuenta como failure y NO llega al indexer, custom text_source funciona (Fase 4 path), progress_callback se invoca por página, repo vacío → stats 0, `has_errors` property |
+| `tests/test_agent_nodes_capture.py` (+3) | **+3** | hook generation llama `index_document_background` con Section(title, content), `indexer=None` → no-op back-compat, fallo del indexer NO rompe el response (capture igual cierra ETAPA_5 OK) |
+| `tests/test_agent_nodes_ingestion.py` (+4) | **+4** | hook index_ingestion idem con `state.extracted_text`, sin indexer no-op, fallo indexer NO rompe (doc + item igual quedan persistidos), si persistencia del `Document` falla NO se intenta indexar |
+| `tests/test_agent_graph.py` (+1) | **+1** | `build_graph(..., indexer=stub)` compila el grafo OK |
+
+**Suite full backend post-3.6**: 622 passed (596 → 622). Tiempo ~46s.
+
+**Decisiones técnicas registradas:**
+- **Hook `await`ed (no fire-and-forget)**: latencia adicional ~1-2s al cierre del modo A/C es aceptable; el usuario ya esperó el flujo entero. Tests más predecibles que con `asyncio.create_task`. Si en prod se ve lento, se refactoriza.
+- **`text_source` async + recibe repo**: la fuente del texto natural en Fase 3 es `repo.get_detail()` (porque `Document` no expone `resumen`). En Fase 4 será Blob — mismo contrato, otro adapter.
+- **`Document` no se extiende para incluir `resumen`**: schema actual ya consolidado; mejor mantener `DocumentDetail` como el agregado "completo" y que el text_source resuelva.
+- **CLI separado del módulo testeable**: lógica en `sqa_kb.rag.reindex` (tests sin DB/Cohere), entrypoint en `scripts/reindex_all.py` (cableado real).
+- **`--dry-run` permite contar sin Cohere key**: facilita planning de capacity antes de un run grande.
 
 ### ⬜ 3.7 — Eval set + métricas + STATUS + merge (pendiente)
 

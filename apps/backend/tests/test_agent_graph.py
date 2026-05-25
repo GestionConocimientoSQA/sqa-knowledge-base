@@ -489,3 +489,28 @@ def test_messages_field_has_reducer_for_concat() -> None:
     msg_hint = hints["messages"]
     metadata = msg_hint.__metadata__
     assert operator.add in metadata
+
+
+# ===========================================================================
+# build_graph — indexer opcional (Fase 3.6)
+# ===========================================================================
+
+
+def test_build_graph_accepts_indexer_kwarg() -> None:
+    """`indexer` es opcional; pasar uno compila el grafo igual."""
+    from dataclasses import dataclass as _dc
+
+    @_dc
+    class _StubIndexer:
+        async def index_document(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            raise NotImplementedError
+
+    gateway = _FakeGateway()
+    repo = _FakeDocRepo()
+    graph = build_graph(
+        gateway=gateway,  # type: ignore[arg-type]
+        document_repo=repo,  # type: ignore[arg-type]
+        searcher=_searcher(),  # type: ignore[arg-type]
+        indexer=_StubIndexer(),  # type: ignore[arg-type]
+    )
+    assert graph is not None

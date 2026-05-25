@@ -3,6 +3,8 @@
 Persiste:
 - `Document` en el repo de documentos (igual que generation en modo A).
 - `IngestionItem` en el repo de ingesta (tracking del workflow).
+- **Chunks RAG (Fase 3.6)**: si hay `indexer` cableado, dispara
+  `index_document_background` con el `extracted_text` como contenido.
 
 Diferencias con `generation` (modo A):
 - El texto NO se genera con LLM — viene del usuario / extractor.
@@ -10,6 +12,8 @@ Diferencias con `generation` (modo A):
 - Sí persiste la `Traceability` como metadata.
 
 Si falla la persistencia → emite disculpa con last_error y termina.
+Si falla la indexación → swallow + log (no bloqueante; reintentable con
+`scripts/reindex_all.py`).
 """
 
 from __future__ import annotations
@@ -30,6 +34,8 @@ from sqa_kb.domain.value_objects import (
     IngestionStatus,
 )
 from sqa_kb.ports.repositories import DocumentRepository, IngestionRepository
+from sqa_kb.rag.chunker import Section
+from sqa_kb.rag.indexer import Indexer, index_document_background
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +46,16 @@ def make_index_ingestion_node(
     *,
     document_repo: DocumentRepository,
     ingestion_repo: IngestionRepository,
+    indexer: Indexer | None = None,
 ) -> NodeFn:
-    """Factory que captura ambos repos."""
+    """Factory que captura ambos repos.
+
+    Args:
+        document_repo: para persistir el Document indexado.
+        ingestion_repo: para el tracking del workflow C.
+        indexer: opcional (Fase 3.6). Si está, indexa el doc recién
+            creado en `document_chunks`. Si `None`, no-op (back-compat).
+    """
 
     async def index_ingestion(state: AgentState) -> dict[str, Any]:
         if state.suggested_classification is None or state.extracted_text is None:
@@ -77,6 +91,16 @@ def make_index_ingestion_node(
             return _error(
                 state,
                 "Recibí los datos pero no pude persistir el documento.",
+            )
+
+        # Hook RAG (Fase 3.6): indexa el texto extraído. El extractor de
+        # Fase 4 traerá secciones reales; mientras tanto pasamos el texto
+        # como una sola Section con el title derivado del texto.
+        if indexer is not None:
+            await index_document_background(
+                indexer,
+                document.id,
+                sections=[Section(title=title, content=state.extracted_text)],
             )
 
         text = (

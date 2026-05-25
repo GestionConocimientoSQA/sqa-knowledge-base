@@ -419,3 +419,108 @@ async def test_index_ingestion_handles_traceability_without_version() -> None:
     )
     await node(state)
     assert doc_repo.created[0].version == "1.0"
+
+
+# ===========================================================================
+# index_ingestion — hook indexer (Fase 3.6)
+# ===========================================================================
+
+
+@dataclass
+class _FakeIndexer:
+    """Fake mínimo del `Indexer` para verificar el hook."""
+
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    should_fail: bool = False
+
+    async def index_document(
+        self, document_id: str, *, sections, text=None, replace=True  # type: ignore[no-untyped-def]
+    ):
+        self.calls.append(
+            {
+                "document_id": document_id,
+                "sections": list(sections),
+                "text": text,
+                "replace": replace,
+            }
+        )
+        if self.should_fail:
+            raise RuntimeError("indexer down")
+        from sqa_kb.rag.indexer import IndexerResult
+
+        return IndexerResult(
+            document_id=document_id,
+            chunks_created=1,
+            tokens_embedded=10,
+            cost_usd=0.0001,
+            sub_batches=1,
+            replaced_old_chunks=0,
+        )
+
+
+async def test_index_ingestion_calls_indexer_with_extracted_text() -> None:
+    """Hook RAG: chunkea el `state.extracted_text` como Section."""
+    state = _ingestion_ready_state()
+    indexer = _FakeIndexer()
+    node = make_index_ingestion_node(
+        document_repo=_FakeDocRepo(),  # type: ignore[arg-type]
+        ingestion_repo=_FakeIngestRepo(),  # type: ignore[arg-type]
+        indexer=indexer,  # type: ignore[arg-type]
+    )
+    update = await node(state)
+
+    assert update["generated_document_id"] is not None
+    assert len(indexer.calls) == 1
+    call = indexer.calls[0]
+    assert call["document_id"] == update["generated_document_id"]
+    # Sections con el texto extraído.
+    assert len(call["sections"]) == 1
+    section = call["sections"][0]
+    assert section.content == state.extracted_text
+
+
+async def test_index_ingestion_no_indexer_no_op() -> None:
+    """Sin indexer (back-compat), el nodo no intenta indexar."""
+    state = _ingestion_ready_state()
+    node = make_index_ingestion_node(
+        document_repo=_FakeDocRepo(),  # type: ignore[arg-type]
+        ingestion_repo=_FakeIngestRepo(),  # type: ignore[arg-type]
+        # sin indexer
+    )
+    update = await node(state)
+    assert update["generated_document_id"] is not None
+    assert update["current_stage"] == "index_ingestion"
+
+
+async def test_index_ingestion_indexer_failure_does_not_break_response() -> None:
+    """Si el indexer falla, el flujo del agente igual cierra OK."""
+    state = _ingestion_ready_state()
+    indexer = _FakeIndexer(should_fail=True)
+    node = make_index_ingestion_node(
+        document_repo=_FakeDocRepo(),  # type: ignore[arg-type]
+        ingestion_repo=_FakeIngestRepo(),  # type: ignore[arg-type]
+        indexer=indexer,  # type: ignore[arg-type]
+    )
+    update = await node(state)
+
+    # El doc + item se crearon, el response salió.
+    assert update["generated_document_id"] is not None
+    assert update["ingestion_item_id"] is not None
+    assert update["current_stage"] == "index_ingestion"
+    # El indexer fue intentado.
+    assert len(indexer.calls) == 1
+
+
+async def test_index_ingestion_does_not_index_when_persistence_fails() -> None:
+    """Si persistir el Document falla, NO se intenta indexar."""
+    state = _ingestion_ready_state()
+    indexer = _FakeIndexer()
+    node = make_index_ingestion_node(
+        document_repo=_FakeDocRepo(should_fail=True),  # type: ignore[arg-type]
+        ingestion_repo=_FakeIngestRepo(),  # type: ignore[arg-type]
+        indexer=indexer,  # type: ignore[arg-type]
+    )
+    update = await node(state)
+    assert update["last_error"]
+    # No tiene sentido indexar si el Document no se persistió.
+    assert indexer.calls == []

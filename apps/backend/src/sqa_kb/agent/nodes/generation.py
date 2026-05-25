@@ -1,18 +1,26 @@
 """Nodo generation (ETAPA 5).
 
-Cadena interna sin pause: render Markdown → score → index. Si llegamos
-acá significa que el usuario ya validó el resumen en ETAPA 4.
+Cadena interna sin pause: render Markdown → persist → score → index RAG.
+Si llegamos acá significa que el usuario ya validó el resumen en ETAPA 4.
 
 Pasos:
 1. `render_markdown_document` arma el contenido + slug.
-2. `index_document`: crea el `Document` en el repo (sin upload a Blob —
+2. `_create_document`: crea el `Document` en el repo (sin upload a Blob —
    eso es Fase 4 con `blob_path` real; acá lo dejamos `None`).
 3. `score_capture` (LLM): calcula 4 dimensiones + value_score.
-4. Emite mensaje con link al documento generado + scoring.
+4. **Hook RAG (Fase 3.6)**: si hay `indexer` cableado, dispara
+   `index_document_background` con `Section(title=titulo, content=markdown)`.
+   El content acá está vivo en memoria — es la única oportunidad de
+   indexarlo en Fase 3 (Fase 4 traerá Blob como fuente persistente).
+5. Emite mensaje con link al documento generado + scoring.
 
-Si cualquier paso falla:
-- `index_document` rota → guardamos `last_error`, emitimos disculpa.
-- `score_capture` falla → indexamos sin scoring (no bloqueante).
+Si algún paso falla:
+- `render_markdown_document` rota → `last_error`, emitimos disculpa.
+- `_create_document` rota → idem.
+- `score_capture` falla → seguimos sin scoring (no bloqueante).
+- `index_document_background` falla → swallow + log (ya lo hace el helper).
+  El usuario ya tiene su doc creado; la indexación se puede reintentar
+  con `scripts/reindex_all.py`.
 
 El nodo NO marca `needs_user_input` — la sesión queda cerrada (END).
 """
@@ -34,6 +42,8 @@ from sqa_kb.domain.entities import Document
 from sqa_kb.domain.value_objects import CategoryCode, DocStatus, DocTypeCode
 from sqa_kb.ports.gateways import LlmGateway
 from sqa_kb.ports.repositories import DocumentRepository
+from sqa_kb.rag.chunker import Section
+from sqa_kb.rag.indexer import Indexer, index_document_background
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +54,18 @@ def make_generation_node(
     *,
     gateway: LlmGateway,
     document_repo: DocumentRepository,
+    indexer: Indexer | None = None,
 ) -> NodeFn:
-    """Factory de generation. Necesita gateway (para scoring) y document
-    repo (para persistir)."""
+    """Factory de generation.
+
+    Args:
+        gateway: LLM para scoring.
+        document_repo: para persistir el Document.
+        indexer: opcional (Fase 3.6). Si está, indexa el doc recién
+            creado en `document_chunks` al cierre del flujo. Si `None`,
+            el nodo no intenta indexar — útil para tests unitarios o
+            entornos sin Cohere cableado.
+    """
 
     async def generation(state: AgentState) -> dict[str, Any]:
         # Paso 1: render markdown
@@ -80,7 +99,21 @@ def make_generation_node(
         except Exception as exc:  # noqa: BLE001
             logger.warning("Scoring falló (no bloqueante): %s", exc)
 
-        # Paso 4: mensaje final
+        # Paso 4: hook RAG — indexa el doc recién creado en `document_chunks`.
+        # `index_document_background` swallow excepciones + loggea → si
+        # Cohere o DB fallan, el flujo del agente sigue su curso y el
+        # usuario ve el doc creado igual. La reindexación se puede
+        # reintentar con `scripts/reindex_all.py`.
+        if indexer is not None:
+            await index_document_background(
+                indexer,
+                document.id,
+                sections=[
+                    Section(title=generated.title, content=generated.content)
+                ],
+            )
+
+        # Paso 5: mensaje final
         return _success_message(state, document=document, scoring=scoring)
 
     return generation
