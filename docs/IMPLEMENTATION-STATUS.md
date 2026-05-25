@@ -1,6 +1,6 @@
 # Estado de implementación · SQA Knowledge Base
 
-> **Última actualización:** 2026-05-23
+> **Última actualización:** 2026-05-23 (Fase 3 en progreso · 3.0/3.1/3.2 cerradas, 3.3-3.7 pendientes)
 > **Documento vivo** — se actualiza al cierre de cada fase.
 > Fuente de verdad para `qué está hecho / en curso / pendiente`.
 
@@ -9,13 +9,13 @@
 | Indicador | Valor |
 |---|---|
 | Timeline estimado total | 16-20 semanas |
-| Avance ponderado | **~60% del proyecto total** (12 de 20 semanas-equivalentes) |
+| Avance ponderado | **~63% del proyecto total** (≈12.5 de 20 semanas-equivalentes) |
 | Fases completadas | **9** (Fase 0, 1A, 1B-local, 2, 5, 6, 7, 10A, 10B) |
-| Fase actual | **Fase 2 ✅ cerrada** — agente LangGraph + endpoint SSE listos · branch `fase-2-agente-langgraph` merged a `master` |
-| Próximas opciones | Fase 3 (RAG vectorial) · Fase 8 (UI cola ingesta) · Fase 9 (UI admin) |
+| Fase actual | **Fase 3 · RAG vectorial 🔄** — sub-fases 3.0/3.1/3.2 cerradas, 3.3-3.7 pendientes · branch `fase-3-rag-vectorial` (NO mergeado a master) |
+| Próxima sub-fase | **3.3** — Retriever vector + boost autoritativos + HNSW index |
 | Bloqueo externo | Fase 1B-azure (Entra ID real) sigue esperando App Registration por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI + PostgreSQL + agente LangGraph ✓ · Infra Bicep esqueleto ✓ |
-| Tests totales | 420 backend + 220 frontend = **640 tests verdes** |
+| Tests totales | 508 backend + 220 frontend = **728 tests verdes** |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
 
 ## Tabla de fases
@@ -25,7 +25,7 @@
 | **0** | **Fundación (monorepo + infra + Azure)** | **1** | **✅ Completada** | **100%** |
 | **1** | **Backend · Persistencia + Auth (1A + 1B-local)** | **2-3** | **✅ Completada (excepto 1B-azure)** | Clean Architecture + PG real + dev auth + endpoints CRUD + frontend conectado. 1B-azure (Entra ID real) bloqueado por TI. |
 | **2** | **Backend · Agente LangGraph (ETAPAS)** | **4-6** | **✅ Completada** | Adapter LLM + AgentState + checkpointer + grafo + 3 modos + endpoint SSE con 14 eventos. 420 tests. |
-| 3 | Backend · RAG vectorial | 7-8 | ⬜ Pendiente | 0% |
+| **3** | **Backend · RAG vectorial** | **7-8** | **🔄 En progreso (43%)** | 3.0 adapter Cohere + 3.1 chunker 4 estrategias + 3.2 indexer + ChunkRepo cerradas. Faltan 3.3-3.7 (retriever HNSW + hybrid search + endpoint /queries + reindex script + eval). 508 tests. |
 | 4 | Backend · Generación y extracción de docs | 9-10 | ⬜ Pendiente | 0% |
 | **5** | **Frontend · Fundación (UI + auth stub)** | **11-12** | **✅ Completada** | **100%** |
 | **6** | **Frontend · Chat streaming SSE (con mock-transport)** | **13-14** | **✅ Completada** | **100%** |
@@ -350,34 +350,86 @@ Lógica del agente Aria implementada como máquina de estados con LangGraph. Los
 
 # Fase 3 · Backend · RAG vectorial
 
-**Estado:** ⬜ Pendiente · **Semanas roadmap:** 7-8
+**Estado:** 🔄 En progreso (sub-fases 3.0 → 3.2 cerradas, 3.3 → 3.7 pendientes) · **Semanas roadmap:** 7-8 · **Branch:** `fase-3-rag-vectorial` (NO mergeado a master todavía)
 
-## Objetivo
+## Resumen ejecutivo
 
-Indexación de documentos + búsqueda semántica con boost de autoritativos. Latencia P95 < 100 ms con 10k chunks.
+Indexación de documentos + búsqueda semántica con boost de autoritativos. Latencia P95 < 100 ms con 10k chunks. Provider de embeddings: **Cohere embed-multilingual-v3.0** (decisión confirmada). Worker: **FastAPI BackgroundTasks** (sin Redis en esta fase). Regla del usuario: **sin requests reales a Cohere** hasta confirmación explícita.
 
-## Tareas planificadas
+## Sub-fases
 
-- ⬜ Chunker con estrategias por tipo de documento (semantic chunking)
-- ⬜ Integrar modelo de embeddings (decisión: Cohere multilingual-v3 vía API)
-- ⬜ Embedder con batching para reducir latencia (batch=100)
-- ⬜ Retriever con query parametrizada (categoría, autoritativo, top-k)
-- ⬜ Boost de autoritativos en la query SQL (`is_authoritative = true` con multiplicador)
-- ⬜ Hybrid search (vector + full-text con `tsvector`)
-- ⬜ Opcional: re-ranking con cross-encoder
-- ⬜ Worker `document_indexer` (arq + Redis)
-- ⬜ Script `reindex_all.py` para batch
-- ⬜ Endpoints:
-  - `POST /queries` (consulta directa sin sesión, devuelve top-k con citaciones)
-  - `GET /documents/search` con filtros
-- ⬜ Métricas: latencia P50/P95, recall en test set sintético
+### ✅ 3.0 — Adapter Cohere embeddings + pricing (cerrada)
 
-## Definition of Done
+- `adapters/embeddings/cohere.py` con `CohereEmbedder` (`AsyncClientV2` inyectable).
+- `embed_documents` (input_type=`search_document`) + `embed_query` (input_type=`search_query`).
+- Fail fast si batch > 96 (el indexer divide antes para mantener costo visible).
+- `adapters/embeddings/pricing.py` con tabla v3.0 ($0.10/Mtok), light ($0.02), english.
+- `ports/gateways.py` agregó `EmbedderPort` + `EmbeddingBatch` (frozen, vectors como `tuple[tuple[float, ...], ...]`).
+- Deps nuevas: `cohere>=5.13`, `langchain-text-splitters>=0.3.4`, `tiktoken>=0.8`.
+- **26 tests con fake SDK** (pricing + adapter happy path + edge cases).
 
-- Búsqueda vectorial responde < 100ms P95 con 10k chunks
-- Boost de autoritativos aplicado correctamente
-- Test set sintético: precisión@5 ≥ 0.85
-- Workers procesan asíncronamente sin bloquear API
+### ✅ 3.1 — Chunker por tipo de doc + headers contextuales (cerrada)
+
+- `rag/chunker.py` con `CHUNK_CONFIG` para los 11 tipos del playbook (espejo §17.2).
+- 4 estrategias: **semantic** (default, RecursiveCharacterTextSplitter), **by_steps** (INST), **hierarchical** (ARCL con path `Padre > Hijo`), **per_slide** (PRES).
+- Oversized step/slide cae a semantic interno con `metadata.oversized_split=True`.
+- Fallback config para tipos nuevos (futuro): semantic 600/700/60.
+- `rag/context_header.py`: `[Tipo: ... | Carpeta: ... | Sección: ...]` prefijado **solo al embedder**, no se almacena duplicado.
+- Tokenizer: `tiktoken cl100k_base` (~5% off de Cohere pero estándar industrial).
+- **41 tests** (configs por tipo, 4 estrategias completas con happy + oversized, edge cases unicode/emoji/empty).
+
+### ✅ 3.2 — Indexer pipeline + background task + ChunkRepository PG (cerrada)
+
+- `domain/entities.py` agregó `DocumentChunk` (Pydantic, id + document_id + chunk_index + content + embedding opcional + metadata).
+- `ports/repositories.py` agregó `ChunkRepository` Protocol (bulk_insert, delete_by_document, count_for_document).
+- `adapters/repositories/postgres/chunks.py`: bulk multi-row INSERT con `ON CONFLICT (document_id, chunk_index) DO UPDATE`. **Bug docificado**: `pg_insert.values([{"metadata": ...}])` colisiona con `Base.metadata` reservado de SQLAlchemy — fix: usar `"metadata_"` en values y `excluded["metadata"]` en set_.
+- `rag/indexer.py`: `Indexer.index_document()` encadena chunk → format_context_header → embed batches (96 Cohere) → bulk_insert. `IndexerResult` con métricas (chunks_created, tokens, cost_usd, sub_batches, replaced).
+- `index_document_background()` wrap para FastAPI BackgroundTasks (loggea con structlog porque FastAPI swallowea errores por default).
+- Atomicidad: **embed ANTES de tocar DB** — si Cohere falla a mitad, los chunks viejos sobreviven. Defensa anti-desync (vector count ≠ chunk count → RuntimeError pre-DB).
+- **21 tests** (12 unit indexer con fakes + 9 integration PG real con pgvector roundtrip 1024 dims).
+
+### ⬜ 3.3 — Retriever vector + boost autoritativos + HNSW (pendiente)
+
+Próxima a arrancar. Plan:
+- `rag/retriever.py` con SQL parametrizado: `(1 - (embedding <=> :query_vec::vector)) * CASE WHEN d.autoritativo THEN 1.15 ELSE 1.0 END`.
+- Migración Alembic con `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops) WITH (m=16, ef_construction=64)`.
+- Filtros: `category`, `document_type`, `authoritative_only`, `top_k`.
+- Tests unit (mock cohere para embed_query + fake DB) + integration con PG real.
+
+### ⬜ 3.4 — Hybrid search vector 70% + full-text 30% (pendiente)
+
+- `rag/hybrid_search.py` combina vector_search + `ts_rank_cd` con pesos del ROADMAP §17.5.
+- Migración GIN sobre `to_tsvector('spanish', content)`.
+- Tests integración PG real.
+
+### ⬜ 3.5 — Endpoint `POST /queries` + reemplazar `search_kb` stub (pendiente)
+
+- Endpoint en `api/queries.py` (consulta directa sin sesión, devuelve top-k + citaciones).
+- Mejorar `GET /documents/search` con filtros.
+- Reemplazar el stub de `agent/tools.py search_kb` con búsqueda hybrid real (impacta los nodos identification + consultation del agente).
+- Tests integración.
+
+### ⬜ 3.6 — Script `reindex_all.py` + hooks de indexación (pendiente)
+
+- `scripts/reindex_all.py` para batch (todos los docs / subset por filtro).
+- Hooks desde `agent/nodes/generation.py` (modo A) y `agent/nodes/index_ingestion.py` (modo C) que disparan `index_document_background` al finalizar el flujo.
+- Tests con mock embedder.
+
+### ⬜ 3.7 — Eval set + métricas + STATUS + merge (pendiente)
+
+- `tests/fixtures/eval_set.jsonl` curado con ~20-30 queries + chunks esperados.
+- `scripts/eval_rag.py` computa **recall@5** y **precision@1**.
+- STATUS update + xlsx + **merge a master**.
+
+## Definition of Done (Fase 3 completa)
+
+- Búsqueda vectorial responde < 100ms P95 con 10k chunks (medido con eval set).
+- Boost de autoritativos aplicado en query SQL.
+- Hybrid search funcional con pesos 70/30.
+- `POST /queries` end-to-end funcional.
+- `search_kb` del agente conectado al retriever real (deja de ser stub).
+- Recall@5 ≥ 0.90 y Precision@1 ≥ 0.75 en eval set.
+- **Sin requests reales a Cohere** — eval con embeddings deterministas mockeados o con vectores pre-computados.
 
 ---
 
