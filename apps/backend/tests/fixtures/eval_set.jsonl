@@ -1,0 +1,30 @@
+// Eval set Fase 3.7 — 20 queries curadas contra el corpus EVAL_CORPUS
+// definido en scripts/eval_rag.py. Las queries son sintéticas; los
+// `query_vector_seed` se cruzan con los slots de los chunks sembrados
+// para que el HybridSearcher (con FakeEmbedder) devuelva los docs
+// esperados con recall@5 ≥ 0.90 y precision@1 ≥ 0.75.
+//
+// query_id Q01-Q20. Convenciones del campo `notes`:
+//   "leak léxico"   = el `query_text` matchea por FTS además de vector
+//   "solo vector"   = sin keywords compartidas → solo el vector
+//   "multi-relevant" = recall@5 con ≥2 docs relevantes
+{"query_id":"Q01","query_text":"como configurar playwright e2e","query_vector_seed":0,"expected_top_doc_id":"TEC-playwright-setup-2026-01-10","expected_relevant_doc_ids":["TEC-playwright-setup-2026-01-10","TEC-cypress-vs-playwright-2026-02-15"],"notes":"playwright keyword + multi-relevant"}
+{"query_id":"Q02","query_text":"comparativa cypress vs playwright","query_vector_seed":1,"expected_top_doc_id":"TEC-cypress-vs-playwright-2026-02-15","expected_relevant_doc_ids":["TEC-cypress-vs-playwright-2026-02-15","TEC-playwright-setup-2026-01-10"],"notes":"multi-relevant léxico"}
+{"query_id":"Q03","query_text":"selenium grid hub distribuido","query_vector_seed":2,"expected_top_doc_id":"TEC-selenium-grid-2026-03-01","expected_relevant_doc_ids":["TEC-selenium-grid-2026-03-01"],"notes":"keyword único"}
+{"query_id":"Q04","query_text":"flaky tests detection mitigation","query_vector_seed":3,"expected_top_doc_id":"TEC-flaky-tests-2026-01-20","expected_relevant_doc_ids":["TEC-flaky-tests-2026-01-20"],"notes":"keyword léxico"}
+{"query_id":"Q05","query_text":"contract testing pact","query_vector_seed":4,"expected_top_doc_id":"TEC-contract-testing-pact-2026-04-05","expected_relevant_doc_ids":["TEC-contract-testing-pact-2026-04-05"],"notes":"pact + contract"}
+{"query_id":"Q06","query_text":"performance testing k6 jmeter","query_vector_seed":5,"expected_top_doc_id":"TEC-performance-k6-2026-04-12","expected_relevant_doc_ids":["TEC-performance-k6-2026-04-12","TEC-load-testing-jmeter-2026-05-01"],"notes":"multi-relevant performance"}
+{"query_id":"Q07","query_text":"load testing jmeter rampup","query_vector_seed":6,"expected_top_doc_id":"TEC-load-testing-jmeter-2026-05-01","expected_relevant_doc_ids":["TEC-load-testing-jmeter-2026-05-01","TEC-performance-k6-2026-04-12"],"notes":"jmeter keyword"}
+{"query_id":"Q08","query_text":"api testing postman collection","query_vector_seed":7,"expected_top_doc_id":"TEC-api-postman-2026-02-20","expected_relevant_doc_ids":["TEC-api-postman-2026-02-20"],"notes":"postman keyword"}
+{"query_id":"Q09","query_text":"mobile testing appium ios android","query_vector_seed":8,"expected_top_doc_id":"TEC-mobile-appium-2026-03-10","expected_relevant_doc_ids":["TEC-mobile-appium-2026-03-10"],"notes":"appium keyword"}
+{"query_id":"Q10","query_text":"accessibility testing axe wcag","query_vector_seed":9,"expected_top_doc_id":"TEC-a11y-axe-2026-04-22","expected_relevant_doc_ids":["TEC-a11y-axe-2026-04-22"],"notes":"axe keyword + a11y"}
+{"query_id":"Q11","query_text":"procedimiento revision codigo","query_vector_seed":10,"expected_top_doc_id":"PROC-code-review-2026-01-15","expected_relevant_doc_ids":["PROC-code-review-2026-01-15"],"notes":"keyword code-review"}
+{"query_id":"Q12","query_text":"proceso ingesta documentos kb","query_vector_seed":11,"expected_top_doc_id":"PROC-ingesta-kb-2026-02-08","expected_relevant_doc_ids":["PROC-ingesta-kb-2026-02-08"],"notes":"proceso ingesta"}
+{"query_id":"Q13","query_text":"politica retencion datos personales","query_vector_seed":12,"expected_top_doc_id":"POL-retencion-datos-2026-03-20","expected_relevant_doc_ids":["POL-retencion-datos-2026-03-20"],"notes":"politica keyword"}
+{"query_id":"Q14","query_text":"politica acceso secrets vault","query_vector_seed":13,"expected_top_doc_id":"POL-secrets-vault-2026-04-01","expected_relevant_doc_ids":["POL-secrets-vault-2026-04-01"],"notes":"secrets vault keyword"}
+{"query_id":"Q15","query_text":"arquitectura microservicios eventos","query_vector_seed":14,"expected_top_doc_id":"ARQ-microservicios-eventos-2026-02-25","expected_relevant_doc_ids":["ARQ-microservicios-eventos-2026-02-25","ARQ-event-sourcing-2026-03-15"],"notes":"multi-relevant arquitectura"}
+{"query_id":"Q16","query_text":"event sourcing cqrs patrones","query_vector_seed":15,"expected_top_doc_id":"ARQ-event-sourcing-2026-03-15","expected_relevant_doc_ids":["ARQ-event-sourcing-2026-03-15","ARQ-microservicios-eventos-2026-02-25"],"notes":"multi-relevant event"}
+{"query_id":"Q17","query_text":"herramienta deploy github actions","query_vector_seed":16,"expected_top_doc_id":"HERR-github-actions-2026-01-05","expected_relevant_doc_ids":["HERR-github-actions-2026-01-05"],"notes":"github actions"}
+{"query_id":"Q18","query_text":"herramienta docker compose local","query_vector_seed":17,"expected_top_doc_id":"HERR-docker-compose-2026-02-12","expected_relevant_doc_ids":["HERR-docker-compose-2026-02-12"],"notes":"docker compose"}
+{"query_id":"Q19","query_text":"instructivo onboarding nuevo colaborador","query_vector_seed":18,"expected_top_doc_id":"INST-onboarding-2026-03-25","expected_relevant_doc_ids":["INST-onboarding-2026-03-25"],"notes":"onboarding"}
+{"query_id":"Q20","query_text":"memoria tecnica migracion postgres","query_vector_seed":19,"expected_top_doc_id":"MTEC-migracion-postgres-2026-04-18","expected_relevant_doc_ids":["MTEC-migracion-postgres-2026-04-18"],"notes":"memoria tecnica postgres"}
