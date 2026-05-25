@@ -19,7 +19,6 @@ from typing import Protocol, runtime_checkable
 
 from sqa_kb.domain.entities import User
 
-
 # ===========================================================================
 # Auth / token validation
 # ===========================================================================
@@ -117,6 +116,46 @@ class LlmGateway(Protocol):
         temperature: float = 0.7,
         metadata: Mapping[str, str] | None = None,
     ) -> AsyncIterator[LlmStreamEvent]: ...
+
+
+# ===========================================================================
+# Embedder (Fase 3 — RAG vectorial)
+# ===========================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class EmbeddingBatch:
+    """Resultado de un batch de embeddings.
+
+    `vectors[i]` corresponde al texto `texts[i]` que se pasó al adapter.
+    `input_tokens` es el total cobrable por Cohere (sum across batch).
+    """
+
+    vectors: tuple[tuple[float, ...], ...]
+    input_tokens: int
+    cost_usd: float
+    model: str
+
+
+@runtime_checkable
+class EmbedderPort(Protocol):
+    """Generación de embeddings (vector de floats) para chunks de texto.
+
+    Adapters:
+    - `adapters/embeddings/cohere.py` — Cohere embed-multilingual-v3.0 (default).
+    - Plan futuro: BGE-M3 self-hosted vía text-embeddings-inference, si TI
+      decide no salir de Azure (mismo schema, swap del adapter).
+
+    Diferencia `embed_documents` vs `embed_query`: Cohere usa el mismo
+    modelo pero distintos `input_type` (`search_document` al indexar,
+    `search_query` al buscar). Importa para la calidad del recall.
+    """
+
+    async def embed_documents(self, texts: Sequence[str]) -> EmbeddingBatch: ...
+    """Embedea chunks a indexar. `input_type=search_document` en Cohere."""
+
+    async def embed_query(self, text: str) -> EmbeddingBatch: ...
+    """Embedea una consulta. `input_type=search_query` en Cohere. Único."""
 
 
 # ===========================================================================
