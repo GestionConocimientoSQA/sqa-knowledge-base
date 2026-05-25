@@ -1,6 +1,6 @@
 # Estado de implementación · SQA Knowledge Base
 
-> **Última actualización:** 2026-05-25 (Fase 3 en progreso · 3.0/3.1/3.2/3.3 cerradas, 3.4-3.7 pendientes)
+> **Última actualización:** 2026-05-25 (Fase 3 en progreso · 3.0/3.1/3.2/3.3/3.4 cerradas, 3.5-3.7 pendientes)
 > **Documento vivo** — se actualiza al cierre de cada fase.
 > Fuente de verdad para `qué está hecho / en curso / pendiente`.
 
@@ -9,13 +9,13 @@
 | Indicador | Valor |
 |---|---|
 | Timeline estimado total | 16-20 semanas |
-| Avance ponderado | **~65% del proyecto total** (≈13 de 20 semanas-equivalentes) |
+| Avance ponderado | **~68% del proyecto total** (≈13.5 de 20 semanas-equivalentes) |
 | Fases completadas | **9** (Fase 0, 1A, 1B-local, 2, 5, 6, 7, 10A, 10B) |
-| Fase actual | **Fase 3 · RAG vectorial 🔄** — sub-fases 3.0/3.1/3.2/3.3 cerradas, 3.4-3.7 pendientes · branch `fase-3-rag-vectorial` (NO mergeado a master) |
-| Próxima sub-fase | **3.4** — Hybrid search vector 70% + full-text 30% |
+| Fase actual | **Fase 3 · RAG vectorial 🔄** — sub-fases 3.0/3.1/3.2/3.3/3.4 cerradas, 3.5-3.7 pendientes · branch `fase-3-rag-vectorial` (NO mergeado a master) |
+| Próxima sub-fase | **3.5** — Endpoint `POST /queries` + reemplazar `search_kb` stub |
 | Bloqueo externo | Fase 1B-azure (Entra ID real) sigue esperando App Registration por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI + PostgreSQL + agente LangGraph ✓ · Infra Bicep esqueleto ✓ |
-| Tests totales | 540 backend + 220 frontend = **760 tests verdes** |
+| Tests totales | 577 backend + 220 frontend = **797 tests verdes** |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
 
 ## Tabla de fases
@@ -25,7 +25,7 @@
 | **0** | **Fundación (monorepo + infra + Azure)** | **1** | **✅ Completada** | **100%** |
 | **1** | **Backend · Persistencia + Auth (1A + 1B-local)** | **2-3** | **✅ Completada (excepto 1B-azure)** | Clean Architecture + PG real + dev auth + endpoints CRUD + frontend conectado. 1B-azure (Entra ID real) bloqueado por TI. |
 | **2** | **Backend · Agente LangGraph (ETAPAS)** | **4-6** | **✅ Completada** | Adapter LLM + AgentState + checkpointer + grafo + 3 modos + endpoint SSE con 14 eventos. 420 tests. |
-| **3** | **Backend · RAG vectorial** | **7-8** | **🔄 En progreso (57%)** | 3.0 adapter Cohere + 3.1 chunker + 3.2 indexer + 3.3 retriever HNSW cerradas. Faltan 3.4-3.7 (hybrid search + endpoint /queries + reindex script + eval). 540 tests. |
+| **3** | **Backend · RAG vectorial** | **7-8** | **🔄 En progreso (71%)** | 3.0 adapter Cohere + 3.1 chunker + 3.2 indexer + 3.3 retriever HNSW + 3.4 hybrid search 70/30 cerradas. Faltan 3.5-3.7 (endpoint /queries + reindex script + eval). 577 tests. |
 | 4 | Backend · Generación y extracción de docs | 9-10 | ⬜ Pendiente | 0% |
 | **5** | **Frontend · Fundación (UI + auth stub)** | **11-12** | **✅ Completada** | **100%** |
 | **6** | **Frontend · Chat streaming SSE (con mock-transport)** | **13-14** | **✅ Completada** | **100%** |
@@ -411,11 +411,32 @@ Indexación de documentos + búsqueda semántica con boost de autoritativos. Lat
 
 **Suite full backend post-3.3**: 540 passed (508 → 540, +32). Tiempo 30-37s.
 
-### ⬜ 3.4 — Hybrid search vector 70% + full-text 30% (pendiente)
+### ✅ 3.4 — Hybrid search vector 70% + full-text 30% (cerrada)
 
-- `rag/hybrid_search.py` combina vector_search + `ts_rank_cd` con pesos del ROADMAP §17.5.
-- Migración GIN sobre `to_tsvector('spanish', content)`.
-- Tests integración PG real.
+- `rag/hybrid_search.py` con `HybridSearcher` (peer del `VectorRetriever`, no cliente — comparten puertos pero cada uno compone su propia query).
+- **Una sola query SQL con CTE**: `vector_results` (top-K por cosine) + `fts_results` (top-K por ts_rank_cd) + `FULL OUTER JOIN` + score combinado lineal `vec*0.7 + fts*0.3` × boost autoritativo. Un solo plan SQL → el planner decide qué rama ejecuta primero; ambos índices (HNSW + GIN) se aprovechan en la misma transacción.
+- **Normalización del FTS con flag 32** (`ts_rank_cd(..., 32)` → `rank/(rank+1)` en `[0,1)`). Sin esto, `ts_rank_cd` puede dar 3-5 y rompe la combinación lineal con vec_score acotado en `[0,1]`. El ROADMAP §17.5 no lo aclara; lo agregué para que la combinación sea consistente.
+- `HybridChunk` (frozen) extiende `RetrievedChunk` con `vector_score` y `fulltext_score` separados — habilita que el agente / UI muestre transparencia ("match exacto" vs "semánticamente similar").
+- **Filtros aplicados en AMBAS CTE** (carpetas, tipos, authoritative_only). Si solo se filtrara una rama, la otra traería chunks fuera de scope que contaminarían el JOIN.
+- Cortocircuitos: `top_k <= 0`, query vacía/whitespace, embedder devolviendo vectors=().
+- `plainto_tsquery('spanish', :query_text)` (no `to_tsquery`) — robusto contra operadores especiales del usuario.
+- Migración Alembic `c8e2f5a1d3b6_gin_fts_index_document_chunks.py`: `CREATE INDEX IF NOT EXISTS ix_document_chunks_content_fts USING GIN (to_tsvector('spanish', content))`. Índice funcional — el predicado del searcher debe matchear EXACTO esta expresión para que el planner lo use.
+- Configurables por construcción: `vector_weight`, `fts_weight`, `default_authoritative_boost`, `candidates_per_branch` (50 default), `snippet_max_chars`.
+- Reusa `_format_pgvector_literal` y `_build_snippet` del módulo `rag/retriever.py` (mismos helpers privados del paquete).
+
+**37 tests por sub-fase 3.4:**
+
+| Archivo | Tests | Cubre |
+|---|---:|---|
+| `tests/test_rag_hybrid_search.py` | **27** | happy path, SQL incluye ambos CTE + FULL OUTER JOIN, `to_tsvector('spanish')` y `plainto_tsquery('spanish')` literales (mismo que el índice GIN), `ts_rank_cd(..., 32)` con flag de normalización, cortocircuitos (top_k=0 sin embed, query vacía/whitespace, vectors=()), pesos/boost/candidates/top_k como bind params, weights override en constructor y per-call, filtros en AMBAS CTE (assert `count == 2`), listas vacías = no-filtro, qvec como literal pgvector, query_text como bind param (anti SQL injection con payload `'; DROP TABLE`), CASE boost al combined_score, HybridChunk inmutable, metadata NULL, snippet_max_chars custom, COALESCE (chunk solo-vector → fts=0, solo-fts → vec=0) |
+| `tests/integration/test_rag_hybrid_search_pg.py` | **10** | chunk con match FTS exacto pero embedding lejano APARECE (caso de uso clave: vector solo lo perdería), chunk semántico sin keyword también aparece con fts_score=0, ranking vec+fts > solo-vec > solo-fts respeta pesos 0.7/0.3, filtros carpeta/tipo aplican, authoritative_only descarta no-auth, boost 1.15× reordena empates, caracteres especiales tsquery (`& | ! : ()` + comilla) no rompen, índice GIN `ix_document_chunks_content_fts` existe tras migración, top_k limita resultados |
+
+**Suite full backend post-3.4**: 577 passed (540 → 577, +37). Tiempo ~36s.
+
+**Decisiones técnicas registradas:**
+- **Normalización flag 32 sobre `ts_rank_cd`** (no en ROADMAP) para mantener combinación lineal interpretable.
+- **CTE única vs composición de retriever**: una sola query SQL evita 2 round-trips y duplicación de filtros del lado de aplicación. Costo: ~10% más LOC vs componer `VectorRetriever`; beneficio: el planner optimiza ambas ramas + ambos índices en un mismo plan.
+- **HybridChunk separado de RetrievedChunk**: composición vía duplicación intencional para no acoplar DTOs. Si en el futuro convergen, se extrae base común.
 
 ### ⬜ 3.5 — Endpoint `POST /queries` + reemplazar `search_kb` stub (pendiente)
 
