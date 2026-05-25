@@ -10,10 +10,25 @@ Compone los componentes core en el orden esperado:
 
 from __future__ import annotations
 
+import asyncio
+import sys
+
+# Windows: psycopg async (Fase 2.1) requiere SelectorEventLoop, no el
+# ProactorEventLoop default de asyncio en Python 3.8+. Tiene que setearse
+# antes de que uvicorn cree el loop, por eso va al tope del módulo.
+# En Linux/Azure (target prod) es no-op.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from sqa_kb.adapters.auth.dev import DevTokenValidator
+from sqa_kb.adapters.checkpointer import CheckpointerBundle, build_checkpointer
+from sqa_kb.adapters.llm import AnthropicDirectGateway
 from sqa_kb.adapters.repositories.postgres import (
     create_engine,
     create_session_factory,
@@ -42,13 +57,17 @@ from sqa_kb.adapters.repositories.postgres.taxonomy import (
     PostgresTaxonomyRepository,
 )
 from sqa_kb.adapters.repositories.postgres.users import PostgresUserRepository
+from sqa_kb.agent.graph import build_graph
 from sqa_kb.api.auth import router as auth_router
 from sqa_kb.api.dashboard import router as dashboard_router
 from sqa_kb.api.documents import router as documents_router
-from sqa_kb.api.health import register_health_check, router as health_router
+from sqa_kb.api.health import register_health_check
+from sqa_kb.api.health import router as health_router
+from sqa_kb.api.messages import router as messages_router
 from sqa_kb.api.sessions import router as sessions_router
+from sqa_kb.api.sse import SseEventBuffer
 from sqa_kb.api.taxonomy import router as taxonomy_router
-from sqa_kb.config import Settings, get_settings
+from sqa_kb.config import LlmGatewayKind, Settings, get_settings
 from sqa_kb.middleware.error_handler import register_error_handlers
 from sqa_kb.middleware.request_id import RequestIdMiddleware
 from sqa_kb.observability.logging import configure_logging, get_logger
@@ -88,6 +107,60 @@ def _wire_persistence(app: FastAPI, settings: Settings) -> None:
     register_health_check(PostgresHealthCheck(engine))
 
 
+async def _wire_agent(app: FastAPI, settings: Settings) -> CheckpointerBundle | None:
+    """Inicializa el grafo del agente (Fase 2) + buffer SSE.
+
+    Requiere DB + LLM gateway config. Si falta cualquier prerrequisito,
+    el wiring se saltea y los endpoints `/sessions/{id}/messages` van a
+    devolver 500 con mensaje claro (vía `_from_state`).
+    """
+    if settings.database_url is None:
+        return None
+
+    # SSE buffer siempre lo creamos (sirve para tests aunque no haya grafo).
+    app.state.sse_buffer = SseEventBuffer()
+
+    if settings.llm_gateway_kind != LlmGatewayKind.ANTHROPIC_DIRECT:
+        # Fase 1B-azure cableará LiteLLM; por ahora solo soportamos directo.
+        return None
+    if settings.anthropic_api_key is None:
+        return None
+
+    # Checkpointer Postgres del paquete oficial (Fase 2.1).
+    bundle = await build_checkpointer(
+        dsn=settings.database_url.get_secret_value()
+    )
+
+    gateway = AnthropicDirectGateway(
+        api_key=settings.anthropic_api_key.get_secret_value(),
+        default_model=settings.llm_default_model,
+    )
+
+    graph = build_graph(
+        gateway=gateway,
+        document_repo=app.state.document_repo,
+        ingestion_repo=app.state.ingestion_repo,
+        checkpointer=bundle.saver,
+    )
+
+    app.state.llm_gateway = gateway
+    app.state.agent_graph = graph
+    app.state.checkpointer_bundle = bundle
+    return bundle
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Lifespan que abre/cierra el checkpointer del agente."""
+    settings = get_settings()
+    bundle = await _wire_agent(app, settings)
+    try:
+        yield
+    finally:
+        if bundle is not None:
+            await bundle.aclose()
+
+
 def create_app() -> FastAPI:
     """Application factory — facilita testing y entornos."""
     settings = get_settings()
@@ -103,6 +176,7 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
+        lifespan=_lifespan,
     )
 
     # Middlewares — el orden importa: RequestId va PRIMERO para que CORS y
@@ -128,6 +202,7 @@ def create_app() -> FastAPI:
     app.include_router(taxonomy_router)
     app.include_router(documents_router)
     app.include_router(sessions_router)
+    app.include_router(messages_router)
     app.include_router(dashboard_router)
 
     @app.get("/", tags=["root"])

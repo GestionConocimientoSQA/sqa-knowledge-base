@@ -65,6 +65,8 @@ get_skill_repo = _from_state("skill_repo")
 get_audit_repo = _from_state("audit_repo")
 get_activity_repo = _from_state("activity_repo")
 get_token_validator = _from_state("token_validator")
+get_agent_graph = _from_state("agent_graph")
+get_sse_buffer = _from_state("sse_buffer")
 
 
 # ===========================================================================
@@ -108,3 +110,11 @@ TaxonomyRepoDep = Annotated[TaxonomyRepository, Depends(get_taxonomy_repo)]
 SkillRepoDep = Annotated[SkillRepository, Depends(get_skill_repo)]
 AuditRepoDep = Annotated[AuditLogRepository, Depends(get_audit_repo)]
 ActivityRepoDep = Annotated[ActivityRepository, Depends(get_activity_repo)]
+
+# Agente — el tipo concreto es CompiledStateGraph pero lo dejamos `object`
+# para evitar import circular en este módulo. El endpoint sabe usar la API.
+AgentGraphDep = Annotated[object, Depends(get_agent_graph)]
+# `SseEventBuffer` también vive en app.state.
+from sqa_kb.api.sse import SseEventBuffer  # noqa: E402 — evitar circular
+
+SseBufferDep = Annotated[SseEventBuffer, Depends(get_sse_buffer)]

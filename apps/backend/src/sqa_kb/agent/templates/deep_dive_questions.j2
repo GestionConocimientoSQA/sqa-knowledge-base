@@ -1,0 +1,20 @@
+{# ETAPA 3 — preguntas dirigidas según el tipo de documento.
+
+Recibe:
+- document_type: uno de POL, PROC, GUIA, INST, SERV, MTEC, ACEL, UEN, ARCL, FORM, PRES.
+- questions: list[str] con las preguntas pre-armadas por tipo (las arma el nodo).
+
+Si el tipo no tiene preguntas dirigidas, el nodo pasa `questions=[]` y el
+template degrada a una pregunta genérica.
+#}
+Para terminar de armar el documento necesito un par de precisiones:
+
+{% if questions %}
+{% for q in questions %}
+{{ loop.index }}. {{ q }}
+{% endfor %}
+
+Respondé lo que sepas — si no aplica algo, decímelo.
+{% else %}
+¿Hay algo más específico que valga la pena documentar sobre este tema? Por ejemplo: contexto, casos límite, dependencias, lecciones aprendidas.
+{% endif %}

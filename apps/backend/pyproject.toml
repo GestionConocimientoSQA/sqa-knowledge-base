@@ -13,6 +13,13 @@ dependencies = [
     "asyncpg>=0.30.0",
     "alembic>=1.14.0",
     "pgvector>=0.3.6",
+    # Fase 2 — agente conversacional
+    "anthropic>=0.40.0",
+    "langgraph>=0.2.60",
+    "langgraph-checkpoint-postgres>=2.0.0",
+    "langchain-core>=0.3.28",
+    "jinja2>=3.1.4",
+    "psycopg[binary,pool]>=3.2.0",
 ]
 
 [project.optional-dependencies]
@@ -46,3 +53,11 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
+filterwarnings = [
+    # Python 3.14 marca como deprecated la policy API que usamos en Windows
+    # para forzar SelectorEventLoop (psycopg async lo necesita). Migramos
+    # cuando 3.16 lo elimine — hasta entonces es la única forma de hacer
+    # esto antes de que pytest-asyncio cree el loop.
+    "ignore:'asyncio.WindowsSelectorEventLoopPolicy' is deprecated:DeprecationWarning",
+    "ignore:'asyncio.set_event_loop_policy' is deprecated:DeprecationWarning",
+]

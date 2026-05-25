@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
+import sys
 from collections.abc import Iterator
 
 import pytest
+
+# Windows: psycopg async requiere SelectorEventLoop, no el ProactorEventLoop
+# que asyncio usa por default en Python 3.8+. Sin este policy, el pool de
+# psycopg cuelga 10s y tira PoolTimeout en cada test. Tiene que aplicarse
+# antes de que pytest-asyncio cree el loop, por eso va al tope del conftest.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 @pytest.fixture(autouse=True)

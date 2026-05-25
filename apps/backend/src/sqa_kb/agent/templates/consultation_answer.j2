@@ -1,0 +1,31 @@
+{# Modo B — respuesta sintetizada del LLM.
+
+Recibe:
+- query: la pregunta original del usuario.
+- has_results: bool — True si KB devolvió chunks.
+- answer: string, la síntesis del LLM (vacío si no hubo resultados).
+- citations: list[Citation] con .document_id, .filename, .section (opt), .snippet.
+- relevance_level: "alta" | "media" | "sin_resultados".
+#}
+{% if not has_results %}
+No encontré información en el KB sobre **{{ query }}**.
+
+Esto puede ser un *gap*: vale la pena marcarlo y, si tenés conocimiento del tema, capturarlo en otra sesión (modo A).
+
+¿Querés probar otra consulta?
+{% else %}
+{{ answer }}
+
+{% if citations %}
+**Fuentes:**
+{% for c in citations %}
+- [{{ c.document_id }}] {{ c.filename }}{% if c.section %} — *{{ c.section }}*{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if relevance_level == "media" %}
+*Aviso*: la coincidencia con tu pregunta es parcial — vale revisar los documentos directamente para confirmar.
+{% endif %}
+
+¿Querés profundizar o tenés otra consulta?
+{% endif %}
