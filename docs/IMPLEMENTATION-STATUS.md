@@ -1,6 +1,6 @@
 # Estado de implementación · SQA Knowledge Base
 
-> **Última actualización:** 2026-05-22
+> **Última actualización:** 2026-05-23
 > **Documento vivo** — se actualiza al cierre de cada fase.
 > Fuente de verdad para `qué está hecho / en curso / pendiente`.
 
@@ -9,21 +9,22 @@
 | Indicador | Valor |
 |---|---|
 | Timeline estimado total | 16-20 semanas |
-| Fases totales | 12 (Fase 0 a Fase 11) |
-| Fases completadas | **4** (Fase 0 + Fase 5 + Fase 6 + Fase 7) |
-| Fase actual | **Fase 1B-local 🔄** (persistencia PG + dev auth + endpoints CRUD + frontend conectado · branch `fase-1-backend-local`) |
-| Próxima sub-fase | 1B.8 — smoke E2E con backend+frontend levantados + merge a master |
+| Avance ponderado | **~60% del proyecto total** (12 de 20 semanas-equivalentes) |
+| Fases completadas | **9** (Fase 0, 1A, 1B-local, 2, 5, 6, 7, 10A, 10B) |
+| Fase actual | **Fase 2 ✅ cerrada** — agente LangGraph + endpoint SSE listos · branch `fase-2-agente-langgraph` merged a `master` |
+| Próximas opciones | Fase 3 (RAG vectorial) · Fase 8 (UI cola ingesta) · Fase 9 (UI admin) |
 | Bloqueo externo | Fase 1B-azure (Entra ID real) sigue esperando App Registration por TI |
-| Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI + PostgreSQL ✓ · Infra Bicep esqueleto ✓ |
+| Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI + PostgreSQL + agente LangGraph ✓ · Infra Bicep esqueleto ✓ |
+| Tests totales | 420 backend + 220 frontend = **640 tests verdes** |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
 
 ## Tabla de fases
 
 | Fase | Bloque | Semanas roadmap | Estado | Cobertura |
 |---|---|---|---|---|
-| 0 | Fundación (monorepo + infra + Azure) | 1 | ✅ Completada | 100% |
-| 1 | Backend · Persistencia + Auth Entra ID | 2-3 | 🔄 Sub-fase 1A ✅ | Clean Architecture + domain + settings + logging + ports + tests (55) — sin DB ni auth real |
-| 2 | Backend · Agente LangGraph (ETAPAS) | 4-6 | ⬜ Pendiente | 0% |
+| **0** | **Fundación (monorepo + infra + Azure)** | **1** | **✅ Completada** | **100%** |
+| **1** | **Backend · Persistencia + Auth (1A + 1B-local)** | **2-3** | **✅ Completada (excepto 1B-azure)** | Clean Architecture + PG real + dev auth + endpoints CRUD + frontend conectado. 1B-azure (Entra ID real) bloqueado por TI. |
+| **2** | **Backend · Agente LangGraph (ETAPAS)** | **4-6** | **✅ Completada** | Adapter LLM + AgentState + checkpointer + grafo + 3 modos + endpoint SSE con 14 eventos. 420 tests. |
 | 3 | Backend · RAG vectorial | 7-8 | ⬜ Pendiente | 0% |
 | 4 | Backend · Generación y extracción de docs | 9-10 | ⬜ Pendiente | 0% |
 | **5** | **Frontend · Fundación (UI + auth stub)** | **11-12** | **✅ Completada** | **100%** |
@@ -31,7 +32,7 @@
 | **7** | **Frontend · Explorer + Dashboard interactivo** | **15** | **✅ Completada** | **100%** |
 | 8 | Frontend · Cola de ingesta | 16 | ⬜ Pendiente | 0% |
 | 9 | Frontend · Admin (usuarios, taxonomía, skills, audit) | 17 | ⬜ Pendiente | 0% |
-| 10 | Hardening (perf + a11y + security review) | 18-19 | 🔄 Sub-fases 10A + 10B ✅ | E2E Playwright + axe a11y + CSP + Lighthouse CI + keyboard nav + i18n (es-CO/en-US) + code splitting; falta backend-side |
+| **10** | **Hardening (perf + a11y + security review)** | **18-19** | **✅ Sub-fases 10A + 10B** | E2E Playwright + axe a11y + CSP + Lighthouse CI + keyboard nav + i18n (es-CO/en-US) + code splitting; falta backend-side |
 | 11 | Migración legacy + paso a producción Azure | 20 | ⬜ Pendiente | parcial (Bicep esqueleto, OIDC workflow) |
 
 ---
@@ -302,47 +303,48 @@ Capa de datos funcional con todas las entidades del modelo, autenticación con M
 
 # Fase 2 · Backend · Agente con LangGraph
 
-**Estado:** ⬜ Pendiente · **Semanas roadmap:** 4-6
+**Estado:** ✅ Completada (sub-fases 2.0 a 2.7) · **Semanas roadmap:** 4-6 · **Branch:** `fase-2-agente-langgraph`
 
-## Objetivo
+## Resumen ejecutivo
 
-Lógica del agente Aria implementada como máquina de estados con LangGraph. Las 3 ETAPAS principales (A captura, B consulta, C ingesta) corren end-to-end.
+Lógica del agente Aria implementada como máquina de estados con LangGraph. Los 3 modos (A captura, B consulta, C ingesta) corren end-to-end con tests verdes, sin tocar `api.anthropic.com` (regla del usuario — el smoke real queda para cuando se confirme el go-live).
 
-## Tareas planificadas
+**420 backend tests verdes** (de 95 al inicio de Fase 2). Cobertura por componente:
 
-- ⬜ Schema de estado del agente (`AgentState` Pydantic)
-- ⬜ LangGraph principal con nodos + edges + conditional routing
-- ⬜ Checkpointer custom que persiste en PostgreSQL (`sessions.agent_state` JSONB)
-- ⬜ Implementar cada ETAPA como módulo separado:
-  - ETAPA 0 — `welcome.py` (presentación + selección de modo)
-  - ETAPA 1 — `identification.py` (identificación + búsqueda KB)
-  - ETAPA 2 — `free_capture.py` (acumulación libre)
-  - ETAPA 3 — `deep_dive.py` (preguntas dirigidas por tipo de doc)
-  - ETAPA 4 — `validation.py` (resumen estructurado + confirmación)
-  - ETAPA 5 — `generation.py` (generación + scoring + indexación)
-  - ETAPA C — `consultation.py` (modo B, sin captura)
-  - ETAPA I — `ingestion.py` (modo C, workflow de aprobación)
-- ⬜ Sistema de plantillas Jinja2 para prompts
-- ⬜ Skills loader (lee skills desde DB, inyecta en system prompts)
-- ⬜ Tools del agente: `search_kb`, `classify_topic`, `score_capture`, `anonymize`
-- ⬜ Anthropic client con streaming async (Sonnet 4.6 default, Haiku para clasificación, Opus para razonamiento profundo)
-- ⬜ Prompt caching para skills + system prompts (cache hit > 80%)
-- ⬜ Cost tracker (tokens entrada/salida + USD por mensaje, almacenado en `messages.cost_usd`)
-- ⬜ Endpoints:
-  - `POST /sessions` (crea sesión nueva, devuelve ID)
-  - `POST /sessions/{id}/messages` con **streaming SSE** (event types definidos en §15.2)
-  - `GET /sessions` (lista del usuario, paginado)
-  - `POST /sessions/{id}/pause` y `/resume`
-- ⬜ Tests de integración para los 3 flujos completos
+| Componente | Tests | Edge cases |
+|---|---:|---|
+| Adapter LLM Anthropic (mock SDK) + pricing | 40 | empty input, multi-system, content mixto, usage None, error mid-stream |
+| AgentState + checkpointer PG (langgraph oficial) | 37 | DSN converter, idempotencia, multi-thread isolation, pending writes |
+| Skills loader + Jinja2 templates + cost tracker | 49 | StrictUndefined fail-fast, cache signature, budget thresholds, asociatividad |
+| Tools (search_kb, classify, score, synthesize) | 27 | markdown wrap, confidence as string, out-of-range raises |
+| Grafo + nodos modo A (welcome/ident/free/deep/valid/gen) | 71 | dispatcher por awaiting, Command intra-turno, persistencia checkpoint |
+| Modo B (consultation) + Modo C (ingest 3-step) | 34 | LLM falla, regex traceability, defaults, repo fail |
+| Endpoint SSE + 14 eventos + buffer + reconexión | 59 | IDOR check antes del grafo, CancelledError sin error event, Last-Event-ID corrupto |
 
-## Definition of Done
+## Sub-fases (todas cerradas)
 
-- Las 3 ETAPAS principales corren E2E vía API
-- Sesiones pausa/reanuda sin pérdida de estado
-- Streaming SSE funciona desde curl/httpx
-- Cost tracker registra correctamente tokens y costo por mensaje
-- Tests de integración cubren happy paths de los 3 modos
-- Frontend Fase 6 puede consumir el streaming sin cambios al contrato
+- ✅ **2.0** Adapter LLM Anthropic directo (`adapters/llm/anthropic_direct.py`) + pricing table Sonnet/Haiku/Opus 4.5 + deps `anthropic`, `langgraph`, `langgraph-checkpoint-postgres`, `jinja2`, `psycopg[binary,pool]`. 40 tests con fake SDK — sin requests reales.
+- ✅ **2.1** `AgentState` Pydantic (§16.2 ROADMAP) con `operator.add` reducer en `messages` + `AsyncPostgresSaver` oficial de LangGraph (descartamos custom — 400 LOC menos a mantener). Fix Windows-specific: `SelectorEventLoop` requerido por psycopg async.
+- ✅ **2.2** SkillsLoader (orden determinista por id, cache_signature versionado) + Jinja2 templates (`StrictUndefined`, autoescape OFF) + cost tracker funcional puro con budget thresholds.
+- ✅ **2.3** Grafo principal + ETAPA 0 (welcome, idempotente) + ETAPA 1 (identification con `search_kb` stub + `classify_topic` LLM-based).
+- ✅ **2.4** ETAPAs 2-5 (free_capture, deep_dive con banco de preguntas por tipo, validation_summary, generation cadena interna) + MarkdownGenerator placeholder (Fase 4 mete DOCX/PPTX/PDF/XLSX). Refactor crítico del dispatcher: routea por `awaiting_confirmation` (no por stage) + `Command(goto=...)` para chain intra-turno.
+- ✅ **2.5** Modo B (consultation loop) + Modo C (ingestion: classify → traceability → index_ingestion). Parser regex de trazabilidad sin LLM (ahorra latencia + costo).
+- ✅ **2.6** Endpoint `POST /sessions/{id}/messages` → `text/event-stream`. Los 14 eventos del §15.2 emitidos por diff entre states. Buffer in-memory por sesión (TTL 1h, cap 500) con `Last-Event-ID` reconnect. IDOR check antes del grafo. Lifespan FastAPI maneja apertura/cierre del checkpointer pool.
+- ✅ **2.7** STATUS update + xlsx + merge a master.
+
+## Decisiones cerradas en Fase 2
+
+- **Modelo default**: Claude Sonnet 4.5 para todo. Mixto Sonnet+Haiku se evaluará cuando midamos costo real.
+- **Checkpointer**: paquete oficial `langgraph-checkpoint-postgres` (3 tablas dedicadas en vez de embedded en `sessions.agent_state` — el ROADMAP original se escribió antes de conocer el API real de LangGraph 1.x).
+- **Buffer SSE**: in-memory single-instance. Multi-instance (Fase 11) → swap a Redis con la misma interfaz pública.
+- **`text-delta` por mensaje completo**: no token-por-token todavía. Fase 5+ podría usar `gateway.stream()` — el contrato del frontend ya lo soporta.
+- **`Command(goto=...)` para chain**: las transiciones free_capture→deep_dive→validation→generation encadenan en la misma vuelta sin requerir mensajes sentinel del usuario.
+
+## Pendientes diferidos
+
+- ⬜ **Smoke E2E con Anthropic real**: el usuario explicitó "no peticiones a la API de Claude hasta confirmación". Cuando confirme, levantar backend + frontend + correr una captura completa con LLM real.
+- ⬜ **Adapter Blob → Azurite** (1B.4 original): no bloqueante en Fase 2 porque `generation` deja el doc en DB sin upload de archivo. Fase 4 lo agrega cuando incorpore generadores DOCX/PPTX que producen bytes binarios.
+- ⬜ **Prompt caching real** (`cache_control` en bloques system): el adapter ya soporta `cache_*_tokens` en el pricing; falta marcar los bloques en el SkillsLoader. Activación cuando midamos cache hit rate real.
 
 ---
 
