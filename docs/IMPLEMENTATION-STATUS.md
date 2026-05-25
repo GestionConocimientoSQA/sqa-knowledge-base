@@ -1,6 +1,6 @@
 # Estado de implementación · SQA Knowledge Base
 
-> **Última actualización:** 2026-05-23 (Fase 3 en progreso · 3.0/3.1/3.2 cerradas, 3.3-3.7 pendientes)
+> **Última actualización:** 2026-05-25 (Fase 3 en progreso · 3.0/3.1/3.2/3.3 cerradas, 3.4-3.7 pendientes)
 > **Documento vivo** — se actualiza al cierre de cada fase.
 > Fuente de verdad para `qué está hecho / en curso / pendiente`.
 
@@ -9,13 +9,13 @@
 | Indicador | Valor |
 |---|---|
 | Timeline estimado total | 16-20 semanas |
-| Avance ponderado | **~63% del proyecto total** (≈12.5 de 20 semanas-equivalentes) |
+| Avance ponderado | **~65% del proyecto total** (≈13 de 20 semanas-equivalentes) |
 | Fases completadas | **9** (Fase 0, 1A, 1B-local, 2, 5, 6, 7, 10A, 10B) |
-| Fase actual | **Fase 3 · RAG vectorial 🔄** — sub-fases 3.0/3.1/3.2 cerradas, 3.3-3.7 pendientes · branch `fase-3-rag-vectorial` (NO mergeado a master) |
-| Próxima sub-fase | **3.3** — Retriever vector + boost autoritativos + HNSW index |
+| Fase actual | **Fase 3 · RAG vectorial 🔄** — sub-fases 3.0/3.1/3.2/3.3 cerradas, 3.4-3.7 pendientes · branch `fase-3-rag-vectorial` (NO mergeado a master) |
+| Próxima sub-fase | **3.4** — Hybrid search vector 70% + full-text 30% |
 | Bloqueo externo | Fase 1B-azure (Entra ID real) sigue esperando App Registration por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI + PostgreSQL + agente LangGraph ✓ · Infra Bicep esqueleto ✓ |
-| Tests totales | 508 backend + 220 frontend = **728 tests verdes** |
+| Tests totales | 540 backend + 220 frontend = **760 tests verdes** |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
 
 ## Tabla de fases
@@ -25,7 +25,7 @@
 | **0** | **Fundación (monorepo + infra + Azure)** | **1** | **✅ Completada** | **100%** |
 | **1** | **Backend · Persistencia + Auth (1A + 1B-local)** | **2-3** | **✅ Completada (excepto 1B-azure)** | Clean Architecture + PG real + dev auth + endpoints CRUD + frontend conectado. 1B-azure (Entra ID real) bloqueado por TI. |
 | **2** | **Backend · Agente LangGraph (ETAPAS)** | **4-6** | **✅ Completada** | Adapter LLM + AgentState + checkpointer + grafo + 3 modos + endpoint SSE con 14 eventos. 420 tests. |
-| **3** | **Backend · RAG vectorial** | **7-8** | **🔄 En progreso (43%)** | 3.0 adapter Cohere + 3.1 chunker 4 estrategias + 3.2 indexer + ChunkRepo cerradas. Faltan 3.3-3.7 (retriever HNSW + hybrid search + endpoint /queries + reindex script + eval). 508 tests. |
+| **3** | **Backend · RAG vectorial** | **7-8** | **🔄 En progreso (57%)** | 3.0 adapter Cohere + 3.1 chunker + 3.2 indexer + 3.3 retriever HNSW cerradas. Faltan 3.4-3.7 (hybrid search + endpoint /queries + reindex script + eval). 540 tests. |
 | 4 | Backend · Generación y extracción de docs | 9-10 | ⬜ Pendiente | 0% |
 | **5** | **Frontend · Fundación (UI + auth stub)** | **11-12** | **✅ Completada** | **100%** |
 | **6** | **Frontend · Chat streaming SSE (con mock-transport)** | **13-14** | **✅ Completada** | **100%** |
@@ -388,13 +388,28 @@ Indexación de documentos + búsqueda semántica con boost de autoritativos. Lat
 - Atomicidad: **embed ANTES de tocar DB** — si Cohere falla a mitad, los chunks viejos sobreviven. Defensa anti-desync (vector count ≠ chunk count → RuntimeError pre-DB).
 - **21 tests** (12 unit indexer con fakes + 9 integration PG real con pgvector roundtrip 1024 dims).
 
-### ⬜ 3.3 — Retriever vector + boost autoritativos + HNSW (pendiente)
+### ✅ 3.3 — Retriever vector + boost autoritativos + HNSW (cerrada)
 
-Próxima a arrancar. Plan:
-- `rag/retriever.py` con SQL parametrizado: `(1 - (embedding <=> :query_vec::vector)) * CASE WHEN d.autoritativo THEN 1.15 ELSE 1.0 END`.
-- Migración Alembic con `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops) WITH (m=16, ef_construction=64)`.
-- Filtros: `category`, `document_type`, `authoritative_only`, `top_k`.
-- Tests unit (mock cohere para embed_query + fake DB) + integration con PG real.
+- `rag/retriever.py` con `VectorRetriever` (SQL crudo + `text()` con bind params, anti SQL injection).
+- Score combinado: `(1 - (embedding <=> :qvec::vector)) * CASE WHEN d.autoritativo THEN :boost ELSE 1.0 END`.
+- **Decisión técnica clave**: `ORDER BY` usa la distancia cruda para que el planner aproveche el índice HNSW; el boost se aplica como columna en el `SELECT` y el re-rank final ocurre en Python sobre el top-K. Sin esta separación, el boost en `ORDER BY` rompe el index scan y el planner cae a secuencial.
+- Filtros: `top_k`, `carpetas`, `tipos`, `authoritative_only`, `authoritative_boost` (override por llamada). Listas vacías (`[]`) se tratan como "sin filtro" — espejo del contrato del frontend.
+- `RetrievedChunk` (frozen dataclass) con todo lo necesario para citar sin round-trip extra a `documents`: `chunk_id`, `document_id`, `chunk_index`, `content`, `snippet`, `section_title`, `score`, `document_title`, `document_type`, `document_category`, `authoritative`.
+- Helper `_format_pgvector_literal` serializa el vector a la representación textual de pgvector (`'[0.1,0.2,...]'::vector`) — evita dependencia del type adapter pgvector-asyncpg en queries con `text()`.
+- Helper `_build_snippet` colapsa whitespace + trunca a `max_chars` con `…`.
+- Migración Alembic `b3a7d1c2e0f4_hnsw_index_document_chunks.py`: `CREATE INDEX IF NOT EXISTS ix_document_chunks_embedding_hnsw USING hnsw (embedding vector_cosine_ops) WITH (m=16, ef_construction=64)`. `SET maintenance_work_mem = '1GB'` antes del CREATE para acelerar el build (recomendado por pgvector).
+- Cortocircuitos: `top_k <= 0` devuelve `[]` sin embedear; embedder devolviendo `vectors=()` devuelve `[]` sin consultar.
+
+**32 tests por sub-fase 3.3:**
+
+| Archivo | Tests | Cubre |
+|---|---:|---|
+| `tests/test_rag_retriever.py` | **25** | helpers (`_format_pgvector_literal` con int/float coerce, `_build_snippet` short/truncate/whitespace), happy path (embed_query usa el texto, RetrievedChunk inmutable), cortocircuitos (top_k=0 no embedea, vectors=() no consulta, rows=[] devuelve []), filtros como bind params (no concatenación de strings al SQL — anti SQL injection), `authoritative_only` agrega predicado, listas vacías como no-filtro, boost default + override por llamada + override en constructor, re-rank desc por score, `top_k` propaga al SQL, qvec serializado como literal pgvector con `CAST(:qvec AS vector)`, metadata sin `section_title`, metadata NULL, `snippet_max_chars` custom en constructor |
+| `tests/integration/test_rag_retriever_pg.py` | **7** | cosine real ordena por similitud, boost 1.15 reordena empates a favor de autoritativo, filtros `carpetas`/`tipos` excluyen otros, `authoritative_only` descarta no-auth aun con mejor distancia cruda, `top_k` limita resultados, índice HNSW `ix_document_chunks_embedding_hnsw` existe tras `alembic upgrade head` (smoke contra `pg_indexes`) |
+
+**Cleanup en integration**: fixture autouse `TRUNCATE document_chunks` antes de cada test del retriever para aislamiento entre tests (los suites previos committean filas y contaminan el ranking global).
+
+**Suite full backend post-3.3**: 540 passed (508 → 540, +32). Tiempo 30-37s.
 
 ### ⬜ 3.4 — Hybrid search vector 70% + full-text 30% (pendiente)
 
