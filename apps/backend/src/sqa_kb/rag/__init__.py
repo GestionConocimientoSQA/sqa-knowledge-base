@@ -18,12 +18,22 @@ from sqa_kb.rag.chunker import (
     Section,
 )
 from sqa_kb.rag.context_header import format_context_header
+from sqa_kb.rag.indexer import (
+    DEFAULT_EMBED_BATCH_SIZE,
+    Indexer,
+    IndexerResult,
+    index_document_background,
+)
 
 __all__ = [
     "CHUNK_CONFIG",
+    "DEFAULT_EMBED_BATCH_SIZE",
     "Chunk",
     "ChunkConfig",
     "Chunker",
+    "Indexer",
+    "IndexerResult",
     "Section",
     "format_context_header",
+    "index_document_background",
 ]
