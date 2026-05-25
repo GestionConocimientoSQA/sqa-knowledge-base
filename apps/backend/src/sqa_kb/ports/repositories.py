@@ -24,6 +24,7 @@ from sqa_kb.domain.entities import (
     Category,
     DocType,
     Document,
+    DocumentChunk,
     DocumentDetail,
     HotTopic,
     IngestionItem,
@@ -156,6 +157,37 @@ class DocumentRepository(Protocol):
     ) -> tuple[Sequence[Document], MyCapturesStats]: ...
 
     async def save_score(self, score: CaptureScore) -> CaptureScore: ...
+
+
+@runtime_checkable
+class ChunkRepository(Protocol):
+    """Persistencia de chunks vectoriales (Fase 3 RAG).
+
+    Operaciones mínimas:
+    - `bulk_insert`: el indexer carga muchos chunks de una vez (un doc
+      grande puede tener 50-100 chunks). Implementación PG usa
+      `INSERT ... VALUES` multi-row para ahorrar round-trips.
+    - `delete_by_document`: re-indexar requiere borrar chunks viejos
+      antes de insertar los nuevos. La FK con `ON DELETE CASCADE`
+      desde `documents` se encarga del cleanup automático al borrar el
+      doc — esto es solo para re-index manual sin borrar el doc.
+    - `count_for_document`: smoke check post-indexación.
+
+    El retriever (Fase 3.3) NO usa este puerto — la query vector + boost
+    se compone directamente sobre la tabla `document_chunks` con SQL
+    crudo para aprovechar `pgvector` y el índice HNSW.
+    """
+
+    async def bulk_insert(self, chunks: Sequence[DocumentChunk]) -> int: ...
+    """Inserta los chunks en una sola transacción. Devuelve cuántos
+    se persistieron exitosamente."""
+
+    async def delete_by_document(self, document_id: str) -> int: ...
+    """Borra los chunks de un documento. Devuelve cuántos eliminó.
+    Idempotente — si no hay chunks, devuelve 0."""
+
+    async def count_for_document(self, document_id: str) -> int: ...
+    """Cuántos chunks tiene un documento. Útil para validar pos-indexación."""
 
 
 @runtime_checkable

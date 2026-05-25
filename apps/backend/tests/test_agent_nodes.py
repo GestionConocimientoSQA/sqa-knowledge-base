@@ -1,15 +1,18 @@
-"""Tests de los nodos welcome + identification (Fase 2.3).
+"""Tests de los nodos welcome + identification (Fase 2.3, refactor 3.5).
 
 Cada test ejerce un nodo en aislamiento (sin compilarlo en el grafo).
-Los fakes de gateway y document_repo viven en este file para no acoplar
+Los fakes de gateway y searcher viven en este file para no acoplar
 los tests entre sí.
+
+Cambio Fase 3.5: `identification` ahora recibe un `HybridSearcher` (peer
+del retriever vectorial) en vez de un `DocumentRepository`. Los fakes
+acá implementan la interfaz mínima del searcher (.search → chunks).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 
 from sqa_kb.agent.nodes import (
     make_identification_node,
@@ -17,55 +20,57 @@ from sqa_kb.agent.nodes import (
 )
 from sqa_kb.agent.nodes.identification import DUPLICATE_THRESHOLD
 from sqa_kb.agent.state import AgentState, initial_state
-from sqa_kb.domain.entities import Document
-from sqa_kb.domain.value_objects import CategoryCode, DocStatus, DocTypeCode
 from sqa_kb.ports.gateways import ChatMessage, LlmCompletion
+from sqa_kb.rag.hybrid_search import HybridChunk
 
 # ===========================================================================
 # Fakes
 # ===========================================================================
 
 
-def _doc(id: str) -> Document:
-    now = datetime.now(UTC)
-    return Document(
-        id=id,
-        titulo="Doc",
-        carpeta=CategoryCode.TEC,
-        tipo=DocTypeCode.MTEC,
-        autoritativo=False,
-        estado=DocStatus.VIGENTE,
-        autor_name="A",
-        autor_role="QA",
-        fecha=now,
-        revision=now,
-        version="1.0",
-        formato="MD",
+def _chunk(
+    *,
+    document_id: str,
+    score: float = 0.5,
+    document_type: str = "MTEC",
+    document_category: str = "TEC",
+) -> HybridChunk:
+    return HybridChunk(
+        chunk_id=f"chk-{document_id}",
+        document_id=document_id,
+        chunk_index=0,
+        content="contenido",
+        snippet="contenido",
+        section_title="Intro",
+        score=score,
+        vector_score=score,
+        fulltext_score=0.0,
+        document_title="Doc",
+        document_type=document_type,
+        document_category=document_category,
+        authoritative=False,
     )
 
 
 @dataclass
-class _FakeDocRepo:
-    docs_to_return: list[Document]
+class _FakeSearcher:
+    """Implementa la API mínima del `HybridSearcher`."""
 
-    async def search(  # noqa: PLR0913
+    chunks_to_return: list[HybridChunk] = field(default_factory=list)
+    last_query: str = ""
+
+    async def search(
         self,
+        query: str,
         *,
-        query: str | None = None,
-        carpetas: object = None,
-        tipos: object = None,
-        estados: object = None,
-        autoritativo: object = None,
-        anonimizado: object = None,
-        min_score: object = None,
-        date_from: object = None,
-        date_to: object = None,
-        author_oid: object = None,
-        sort_by: object = None,
-        limit: int = 20,
-        offset: int = 0,
-    ) -> tuple[Sequence[Document], int]:
-        return list(self.docs_to_return), len(self.docs_to_return)
+        top_k: int = 5,  # noqa: ARG002
+        carpetas: Iterable[str] | None = None,  # noqa: ARG002
+        tipos: Iterable[str] | None = None,  # noqa: ARG002
+        authoritative_only: bool = False,  # noqa: ARG002
+        authoritative_boost: float | None = None,  # noqa: ARG002
+    ) -> Sequence[HybridChunk]:
+        self.last_query = query
+        return list(self.chunks_to_return)
 
 
 @dataclass
@@ -169,7 +174,7 @@ async def test_identification_extracts_topic_from_last_user_msg() -> None:
     state = _state_with_user_msg(content="detección de flaky tests en CI")
     node = make_identification_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(docs_to_return=[]),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(),  # type: ignore[arg-type]
     )
     update = await node(state)
 
@@ -182,7 +187,7 @@ async def test_identification_emits_classification_proposal_when_no_duplicates()
     state = _state_with_user_msg()
     node = make_identification_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(docs_to_return=[]),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(),  # type: ignore[arg-type]
     )
     update = await node(state)
 
@@ -192,12 +197,16 @@ async def test_identification_emits_classification_proposal_when_no_duplicates()
 
 
 async def test_identification_emits_duplicate_found_when_near_match() -> None:
-    """Doc similar con distance <= 0.55 (el stub linear da 0.30 al primero)."""
+    """Chunk con score alto → distance baja → duplicate detectado.
+
+    Con score=0.9 → distance=0.10 ≤ 0.55 (threshold). El nodo emite
+    `duplicate_found.j2` y espera `update_decision`.
+    """
     state = _state_with_user_msg()
-    docs = [_doc("TEC-flaky-2026-04-01")]
+    chunks = [_chunk(document_id="TEC-flaky-2026-04-01", score=0.9)]
     node = make_identification_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(docs_to_return=docs),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(chunks_to_return=chunks),  # type: ignore[arg-type]
     )
     update = await node(state)
 
@@ -210,7 +219,7 @@ async def test_identification_stores_classification_in_state() -> None:
     state = _state_with_user_msg()
     node = make_identification_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(docs_to_return=[]),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(),  # type: ignore[arg-type]
     )
     update = await node(state)
 
@@ -220,20 +229,20 @@ async def test_identification_stores_classification_in_state() -> None:
 
 
 async def test_identification_stores_existing_documents_even_when_proposing() -> None:
-    """Cuando NO hay duplicate cercano pero sí hay docs lejanos, igualmente
-    los persistimos en state para que el frontend los muestre."""
+    """Con chunks lejanos (distance > 0.55) → propuesta directa pero el
+    doc remoto igualmente entra en `existing_documents` para que el
+    frontend lo muestre como referencia."""
     state = _state_with_user_msg()
-    # Stub: 3 docs → distances 0.30, 0.40, 0.50 — el primero ya cae bajo el
-    # threshold de 0.55 ... así que mejor probamos con un doc solo cuyo
-    # distance esté MUY arriba. Pero stub es linear desde 0.30; no se puede
-    # forzar distance > threshold sin cambiar el stub.
-    # Probamos entonces el caso con 0 docs vs 1 doc.
+    # score=0.3 → distance=0.7 > 0.55 → no es duplicate.
+    chunks = [_chunk(document_id="TEC-far-2026-01-01", score=0.3)]
     node = make_identification_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(docs_to_return=[]),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(chunks_to_return=chunks),  # type: ignore[arg-type]
     )
     update = await node(state)
-    assert update["existing_documents"] == []
+    assert update["awaiting_confirmation"] == "classification"
+    assert len(update["existing_documents"]) == 1
+    assert update["existing_documents"][0].document_id == "TEC-far-2026-01-01"
 
 
 # ===========================================================================
@@ -248,9 +257,9 @@ async def test_identification_with_no_user_message_asks_for_topic() -> None:
     )
     # state.messages está vacío
     gateway = _FakeGateway()
-    repo = _FakeDocRepo(docs_to_return=[])
+    searcher = _FakeSearcher()
 
-    node = make_identification_node(gateway=gateway, document_repo=repo)  # type: ignore[arg-type]
+    node = make_identification_node(gateway=gateway, searcher=searcher)  # type: ignore[arg-type]
     update = await node(state)
 
     msg = update["messages"][0]
@@ -270,7 +279,7 @@ async def test_identification_ignores_agent_messages_when_extracting_topic() -> 
     ]
     node = make_identification_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(docs_to_return=[]),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(),  # type: ignore[arg-type]
     )
     update = await node(state)
     assert update["topic"] == "topic real"
@@ -280,7 +289,7 @@ async def test_identification_strips_whitespace_from_topic() -> None:
     state = _state_with_user_msg(content="   topic con espacios   \n")
     node = make_identification_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(docs_to_return=[]),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(),  # type: ignore[arg-type]
     )
     update = await node(state)
     assert update["topic"] == "topic con espacios"
@@ -290,7 +299,7 @@ async def test_identification_message_has_required_fields() -> None:
     state = _state_with_user_msg()
     node = make_identification_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(docs_to_return=[]),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(),  # type: ignore[arg-type]
     )
     update = await node(state)
 

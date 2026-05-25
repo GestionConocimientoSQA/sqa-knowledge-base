@@ -21,7 +21,7 @@ Convención de campos:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Self
+from typing import Annotated, Any, Self
 
 from pydantic import (
     BaseModel,
@@ -330,6 +330,29 @@ class DocumentDetail(Document):
 
     incoming_citations: list[IncomingCitation] = Field(default_factory=list)
     resumen: str = ""
+
+
+class DocumentChunk(_Base):
+    """Pieza vectorial de un documento indexado (Fase 3 RAG).
+
+    `embedding` es opcional porque puede haber chunks recién creados sin
+    vector (raro en el flujo normal — el indexer embedea antes del insert,
+    pero hay un período de unos ms entre INSERT y commit donde el campo
+    podría estar NULL en lecturas concurrentes). El dominio lo modela
+    como opcional para no mentir.
+
+    `metadata` guarda: `strategy`, `section_title`, `token_count`, `path`
+    (hierarchical), `slide_number` (per_slide), `oversized_split` (bool).
+    Queries del retriever no filtran por esos campos — solo se exponen
+    al frontend en el response.
+    """
+
+    id: NonEmptyStr
+    document_id: NonEmptyStr
+    chunk_index: int = Field(ge=0)
+    content: NonEmptyStr
+    embedding: list[float] | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 # ===========================================================================

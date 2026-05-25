@@ -1,57 +1,74 @@
-"""Tests del nodo `consultation` (Fase 2.5, modo B).
+"""Tests del nodo `consultation` (Fase 2.5, refactor en Fase 3.5).
 
 Cubren:
 - Pregunta vacía / sin user msg → pide pregunta.
 - Sin chunks en KB → mensaje "no encontré".
-- Con chunks → llama al LLM, emite respuesta con citaciones.
-- Threshold de relevancia: alta (<=0.5) vs media (<=0.8).
+- Con chunks (HybridChunk) → llama al LLM con content real, emite
+  respuesta con citaciones.
+- Threshold de relevancia: alta (distance<=0.5) vs media (<=0.8) vs
+  sin_resultados (>0.8). `distance = 1 - score` del hybrid searcher.
 - Síntesis del LLM falla → mensaje degradado con last_error.
 - citations acumuladas en state (no se pierden entre turnos).
+
+Fase 3.5: el nodo consume `HybridSearcher.search()` → `HybridChunk` con
+`content` real. Antes (2.5) tomaba `ExistingDocument` y stub-construía
+chunks desde `filename`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 
 from sqa_kb.agent.nodes import make_consultation_node
 from sqa_kb.agent.state import AgentState, Citation, initial_state
-from sqa_kb.domain.entities import Document
-from sqa_kb.domain.value_objects import CategoryCode, DocStatus, DocTypeCode
 from sqa_kb.ports.gateways import ChatMessage, LlmCompletion
+from sqa_kb.rag.hybrid_search import HybridChunk
 
 # ===========================================================================
 # Fakes
 # ===========================================================================
 
 
-def _doc(id: str) -> Document:
-    now = datetime.now(UTC)
-    return Document(
-        id=id,
-        titulo="Doc",
-        carpeta=CategoryCode.TEC,
-        tipo=DocTypeCode.MTEC,
-        autoritativo=False,
-        estado=DocStatus.VIGENTE,
-        autor_name="A",
-        autor_role="QA",
-        fecha=now,
-        revision=now,
-        version="1.0",
-        formato="MD",
+def _chunk(
+    *,
+    document_id: str,
+    score: float = 0.9,
+    content: str = "Los tests flaky son intermitentes y deben aislarse.",
+    section_title: str = "Definición",
+) -> HybridChunk:
+    return HybridChunk(
+        chunk_id=f"chk-{document_id}",
+        document_id=document_id,
+        chunk_index=0,
+        content=content,
+        snippet=content[:240],
+        section_title=section_title,
+        score=score,
+        vector_score=score,
+        fulltext_score=0.0,
+        document_title="Doc",
+        document_type="MTEC",
+        document_category="TEC",
+        authoritative=False,
     )
 
 
 @dataclass
-class _FakeDocRepo:
-    docs_to_return: list[Document] = field(default_factory=list)
+class _FakeSearcher:
+    chunks_to_return: list[HybridChunk] = field(default_factory=list)
 
-    async def search(  # noqa: PLR0913
-        self, **kwargs  # type: ignore[no-untyped-def]
-    ) -> tuple[Sequence[Document], int]:
-        return list(self.docs_to_return), len(self.docs_to_return)
+    async def search(
+        self,
+        query: str,  # noqa: ARG002
+        *,
+        top_k: int = 5,  # noqa: ARG002
+        carpetas: Iterable[str] | None = None,  # noqa: ARG002
+        tipos: Iterable[str] | None = None,  # noqa: ARG002
+        authoritative_only: bool = False,  # noqa: ARG002
+        authoritative_boost: float | None = None,  # noqa: ARG002
+    ) -> Sequence[HybridChunk]:
+        return list(self.chunks_to_return)
 
 
 @dataclass
@@ -100,7 +117,7 @@ async def test_consultation_asks_for_query_when_no_user_msg() -> None:
     state = _state()
     node = make_consultation_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(),  # type: ignore[arg-type]
     )
     update = await node(state)
     assert "Decime qué querés consultar" in update["messages"][0]["content"]
@@ -112,7 +129,7 @@ async def test_consultation_empty_message_treated_as_no_query() -> None:
     state = _state(question="   \n  ")
     node = make_consultation_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(),  # type: ignore[arg-type]
     )
     update = await node(state)
     assert "Decime qué" in update["messages"][0]["content"]
@@ -127,7 +144,7 @@ async def test_consultation_emits_no_results_when_kb_empty() -> None:
     state = _state(question="qué es lo más raro del KB")
     node = make_consultation_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(),  # type: ignore[arg-type]
     )
     update = await node(state)
     msg = update["messages"][0]
@@ -143,24 +160,22 @@ async def test_consultation_emits_no_results_when_kb_empty() -> None:
 
 async def test_consultation_synthesizes_with_chunks() -> None:
     state = _state(question="qué son flaky tests")
+    chunks = [_chunk(document_id="TEC-flaky-2026-01-01", score=0.9)]
     node = make_consultation_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(docs_to_return=[_doc("TEC-flaky-2026-01-01")]),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(chunks_to_return=chunks),  # type: ignore[arg-type]
     )
     update = await node(state)
     msg = update["messages"][0]
     assert "Los tests flaky son intermitentes" in msg["content"]
     # Citación renderizada por el template:
     assert "TEC-flaky-2026-01-01" in msg["content"]
-    # Stub distance = 0.30 → relevancia alta.
+    # score 0.9 → distance 0.1 → relevancia alta.
     assert update["relevance_level"] == "alta"
 
 
-async def test_consultation_classifies_relevance_media_between_thresholds() -> None:
-    """Stub: 4 docs → distances 0.30/0.40/0.50/0.60. El primero (0.30) cae en
-    "alta". Para forzar "media" probamos con un solo doc cuyo distance sea
-    >0.5 — pero el stub siempre da 0.30 al primero. Probamos la función
-    helper directo."""
+async def test_consultation_classifies_relevance_thresholds() -> None:
+    """`distance = 1 - score_combinado`. Verificamos los 3 buckets."""
     from sqa_kb.agent.nodes.consultation import _classify_relevance
 
     assert _classify_relevance(0.30) == "alta"
@@ -168,6 +183,18 @@ async def test_consultation_classifies_relevance_media_between_thresholds() -> N
     assert _classify_relevance(0.51) == "media"
     assert _classify_relevance(0.80) == "media"
     assert _classify_relevance(0.81) == "sin_resultados"
+
+
+async def test_consultation_relevance_calculated_from_score() -> None:
+    """End-to-end: score=0.4 → distance=0.6 → bucket "media"."""
+    state = _state(question="x")
+    chunks = [_chunk(document_id="TEC-mid", score=0.4)]
+    node = make_consultation_node(
+        gateway=_FakeGateway(),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(chunks_to_return=chunks),  # type: ignore[arg-type]
+    )
+    update = await node(state)
+    assert update["relevance_level"] == "media"
 
 
 async def test_consultation_appends_citations_to_state() -> None:
@@ -182,9 +209,10 @@ async def test_consultation_appends_citations_to_state() -> None:
             position=0,
         )
     ]
+    chunks = [_chunk(document_id="NEW-2026-01-01")]
     node = make_consultation_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(docs_to_return=[_doc("NEW-2026-01-01")]),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(chunks_to_return=chunks),  # type: ignore[arg-type]
     )
     update = await node(state)
     # OLD + NEW
@@ -200,9 +228,10 @@ async def test_consultation_appends_citations_to_state() -> None:
 
 async def test_consultation_degraded_when_llm_fails() -> None:
     state = _state(question="x")
+    chunks = [_chunk(document_id="TEC-x-2026-01-01")]
     node = make_consultation_node(
         gateway=_FakeGateway(should_fail=True),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(docs_to_return=[_doc("TEC-x-2026-01-01")]),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(chunks_to_return=chunks),  # type: ignore[arg-type]
     )
     update = await node(state)
     msg = update["messages"][0]
@@ -216,7 +245,7 @@ async def test_consultation_persists_query_in_state() -> None:
     state = _state(question="qué es flaky")
     node = make_consultation_node(
         gateway=_FakeGateway(),  # type: ignore[arg-type]
-        document_repo=_FakeDocRepo(),  # type: ignore[arg-type]
+        searcher=_FakeSearcher(),  # type: ignore[arg-type]
     )
     update = await node(state)
     assert update["current_query"] == "qué es flaky"

@@ -67,6 +67,10 @@ get_activity_repo = _from_state("activity_repo")
 get_token_validator = _from_state("token_validator")
 get_agent_graph = _from_state("agent_graph")
 get_sse_buffer = _from_state("sse_buffer")
+get_kb_searcher = _from_state("kb_searcher")
+"""HybridSearcher (Fase 3.5). Si falta `SQA_KB_COHERE_API_KEY` al
+startup, el wiring saltea esta dependencia y `_from_state` levanta 500
+con mensaje claro cuando algún endpoint la pida."""
 
 
 # ===========================================================================
@@ -118,3 +122,8 @@ AgentGraphDep = Annotated[object, Depends(get_agent_graph)]
 from sqa_kb.api.sse import SseEventBuffer  # noqa: E402 — evitar circular
 
 SseBufferDep = Annotated[SseEventBuffer, Depends(get_sse_buffer)]
+
+# HybridSearcher para `/queries` (Fase 3.5).
+from sqa_kb.rag.hybrid_search import HybridSearcher  # noqa: E402
+
+KbSearcherDep = Annotated[HybridSearcher, Depends(get_kb_searcher)]

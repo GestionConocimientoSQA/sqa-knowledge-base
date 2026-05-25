@@ -1,20 +1,28 @@
-"""Tools del agente — Fase 2.3.
+"""Tools del agente — Fase 2.3 (refactorizada en Fase 3.5).
 
 Estos son los "tool calls" que los nodos del grafo invocan para tareas
 discretas (buscar en KB, clasificar topic, scorear captura, anonimizar).
 
 Diseño:
 - **Funciones libres** que reciben sus dependencias por parámetro (gateway,
-  repos). NO se inyectan via context global — facilita test sin patch.
+  searcher, repos). NO se inyectan via context global — facilita test sin patch.
 - **Devuelven dataclasses o sub-modelos de `agent.state`** — el caller
   fusiona el resultado en el state via partial update.
 - **Anthropic-agnostic**: dependen de `LlmGateway` (puerto), no del SDK.
 
-Tools incluidas en 2.3:
-- `search_kb(repo, query, top_k)`: full-text search sobre `documents.titulo`
-  (stub — Fase 3 RAG agrega vector search + boost autoritativos).
-- `classify_topic(gateway, topic, history)`: pide al LLM una sugerencia de
-  carpeta + tipo + razón. Parsea JSON estructurado del response.
+Tools incluidas:
+- `search_kb(searcher, query, top_k)`: hybrid search vector + FTS,
+  agrupa chunks por documento y devuelve `ExistingDocument[]` con
+  `distance = 1 - score`. Reemplaza el stub full-text de Fase 2.3.
+- `search_kb_chunks(searcher, query, top_k)`: variante que devuelve
+  los chunks crudos con `content`/`snippet` (úsala para sintetizar
+  respuestas en modo B).
+- `classify_topic(gateway, topic, history)`: pide al LLM una sugerencia
+  de carpeta + tipo + razón.
+- `synthesize_consultation_answer(gateway, query, chunks)`: arma la
+  respuesta del modo B con citas inline.
+- `build_citations_from_results(chunks)`: convierte chunks a citaciones
+  para state.
 
 Tools que vienen en 2.4+:
 - `score_capture` (ETAPA 5)
@@ -35,50 +43,104 @@ from sqa_kb.agent.state import (
     ExistingDocument,
 )
 from sqa_kb.ports.gateways import ChatMessage, LlmGateway
-from sqa_kb.ports.repositories import DocumentRepository
+from sqa_kb.rag.hybrid_search import HybridChunk, HybridSearcher
 
 logger = logging.getLogger(__name__)
 
 
 # ===========================================================================
-# search_kb (stub)
+# search_kb (RAG real — Fase 3.5)
 # ===========================================================================
+#
+# `search_kb` agrupa los chunks devueltos por el `HybridSearcher` en
+# `ExistingDocument` (un row por document_id). El score combinado del
+# hybrid searcher está en [0, ~boost]; lo convertimos a `distance =
+# clip(1 - score, 0, 1)` para mantener la semántica del state del agente
+# (ETAPA 1 compara contra `DUPLICATE_THRESHOLD = 0.55` desde antes de
+# Fase 3 — el contrato no cambia, solo la implementación).
+#
+# Para conseguir K docs únicos, el caller no sabe cuántos chunks van a
+# colapsar. Pedimos `top_k * CHUNK_OVERSAMPLE` chunks al searcher y
+# dedupeamos por `document_id` quedándonos con el de mejor score.
+# Oversample = 5 cubre el caso común; si en la práctica documentos muy
+# largos colapsan más chunks, el caller puede pedir más top_k.
+
+CHUNK_OVERSAMPLE: int = 5
+"""Multiplicador para pedir más chunks al searcher antes de dedupear
+por `document_id`. Calibrado para que `top_k=3` pida 15 chunks y casi
+siempre alcance para 3 docs únicos."""
 
 
 async def search_kb(
-    repo: DocumentRepository,
+    searcher: HybridSearcher,
     *,
     query: str,
     top_k: int = 3,
 ) -> list[ExistingDocument]:
-    """Busca documentos similares al `query` en el KB.
+    """Busca documentos similares al `query` en el KB usando hybrid search.
 
-    **STUB**: usa `repo.search()` con el query textual (PostgreSQL ILIKE
-    sobre `titulo + tags + autor_name`, Fase 1B.5). Devuelve dummy distance
-    proporcional a la posición (0.30, 0.40, 0.50, ...). Fase 3 reemplaza
-    por vector search real con embeddings + boost de autoritativos.
-
-    El shape del resultado (`ExistingDocument`) ya es el correcto — solo
-    cambia la implementación interna en Fase 3, los callers no se enteran.
+    Devuelve hasta `top_k` documentos únicos ordenados por relevancia
+    (mejor score primero). `distance = 1 - score` — los nodos del agente
+    (identification, consultation) comparan contra `DUPLICATE_THRESHOLD`
+    y `HIGH/MEDIUM_RELEVANCE_THRESHOLD` con esa semántica.
     """
     if not query.strip():
         return []
-    items, _total = await repo.search(query=query, limit=top_k, offset=0)
+    chunks = await searcher.search(query, top_k=top_k * CHUNK_OVERSAMPLE)
+    if not chunks:
+        return []
+
+    # Dedupe por document_id quedándonos con el chunk de mejor score.
+    # Los chunks ya vienen ordenados desc por score (ROADMAP §17.5), así
+    # que el primer chunk visto de cada doc es el ganador.
+    best_by_doc: dict[str, HybridChunk] = {}
+    for chunk in chunks:
+        if chunk.document_id not in best_by_doc:
+            best_by_doc[chunk.document_id] = chunk
+        if len(best_by_doc) >= top_k:
+            break
+
     result: list[ExistingDocument] = []
-    for idx, doc in enumerate(items):
+    for chunk in best_by_doc.values():
+        # `distance = clip(1 - score, 0, 1)`. El boost autoritativo puede
+        # llevar score > 1; truncamos para que distance no quede negativa
+        # y rompa los thresholds.
+        distance = max(0.0, min(1.0, 1.0 - chunk.score))
         result.append(
             ExistingDocument(
-                document_id=doc.id,
-                filename=doc.id + ".md",
-                category=str(doc.carpeta),
-                document_type=str(doc.tipo),
-                # Distance creciente lineal con la posición (stub).
-                # Fase 3: distance real del vector index.
-                distance=round(0.30 + idx * 0.10, 2),
-                created_at=doc.fecha.isoformat(),
+                document_id=chunk.document_id,
+                # `filename` es un alias derivado — Fase 4 lo reemplazará
+                # con el nombre real del blob cuando exista upload.
+                filename=chunk.document_id + ".md",
+                category=chunk.document_category,
+                document_type=chunk.document_type,
+                distance=round(distance, 4),
+                # Sin acceso a la fecha del doc desde el chunk — el
+                # `HybridChunk` no la trae para mantener payload chico.
+                # Pasamos string vacío (el frontend lo trata como "—").
+                # Si el nodo necesita la fecha, hace un repo.get(doc_id).
+                created_at="",
             )
         )
     return result
+
+
+async def search_kb_chunks(
+    searcher: HybridSearcher,
+    *,
+    query: str,
+    top_k: int = 5,
+) -> Sequence[HybridChunk]:
+    """Variante que devuelve los chunks crudos del hybrid search.
+
+    Útil para nodos que necesitan el `content` del chunk (consultation
+    para sintetizar respuesta, generation para citar) — no solo el
+    document_id como `search_kb`. Sin dedupe ni agregación: el caller
+    decide qué hacer con múltiples chunks del mismo doc.
+    """
+    if not query.strip():
+        return []
+    return await searcher.search(query, top_k=top_k)
 
 
 # ===========================================================================

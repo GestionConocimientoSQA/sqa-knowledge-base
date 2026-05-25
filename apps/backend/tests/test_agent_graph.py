@@ -67,6 +67,30 @@ class _FakeDocRepo:
         return document
 
 
+# `HybridSearcher` fake — el grafo ahora pasa por acá en identification +
+# consultation (Fase 3.5).
+from sqa_kb.rag.hybrid_search import HybridChunk  # noqa: E402
+
+
+@dataclass
+class _FakeSearcher:
+    """Implementa la API mínima del HybridSearcher."""
+
+    chunks_to_return: list[HybridChunk] = field(default_factory=list)
+
+    async def search(
+        self,
+        query: str,  # noqa: ARG002
+        *,
+        top_k: int = 5,  # noqa: ARG002
+        carpetas=None,  # type: ignore[no-untyped-def] # noqa: ARG002
+        tipos=None,  # type: ignore[no-untyped-def] # noqa: ARG002
+        authoritative_only: bool = False,  # noqa: ARG002
+        authoritative_boost=None,  # type: ignore[no-untyped-def] # noqa: ARG002
+    ) -> Sequence[HybridChunk]:
+        return list(self.chunks_to_return)
+
+
 @dataclass
 class _FakeGateway:
     classify_response: str = (
@@ -262,10 +286,16 @@ def test_dispatcher_fallback_for_unvalidated_etapa_4() -> None:
 # ===========================================================================
 
 
+def _searcher() -> _FakeSearcher:
+    """Helper para casos donde el grafo solo necesita el searcher cableado
+    pero los tests no validan su comportamiento."""
+    return _FakeSearcher()
+
+
 def test_build_graph_compiles_without_checkpointer() -> None:
     gateway = _FakeGateway()
     repo = _FakeDocRepo()
-    graph = build_graph(gateway=gateway, document_repo=repo)  # type: ignore[arg-type]
+    graph = build_graph(gateway=gateway, document_repo=repo, searcher=_searcher())  # type: ignore[arg-type]
     assert graph is not None
 
 
@@ -275,6 +305,7 @@ def test_build_graph_compiles_with_in_memory_checkpointer() -> None:
     graph = build_graph(
         gateway=gateway,  # type: ignore[arg-type]
         document_repo=repo,  # type: ignore[arg-type]
+        searcher=_searcher(),  # type: ignore[arg-type]
         checkpointer=InMemorySaver(),
     )
     assert graph is not None
@@ -292,6 +323,7 @@ async def test_capture_flow_first_turn_runs_welcome_only() -> None:
     graph = build_graph(
         gateway=gateway,  # type: ignore[arg-type]
         document_repo=repo,  # type: ignore[arg-type]
+        searcher=_searcher(),  # type: ignore[arg-type]
         checkpointer=InMemorySaver(),
     )
     state = initial_state(
@@ -323,6 +355,7 @@ async def test_capture_flow_multi_turn_reaches_generation() -> None:
     graph = build_graph(
         gateway=gateway,  # type: ignore[arg-type]
         document_repo=repo,  # type: ignore[arg-type]
+        searcher=_searcher(),  # type: ignore[arg-type]
         checkpointer=checkpointer,
     )
     config = {"configurable": {"thread_id": "ses-multi"}}
@@ -418,6 +451,7 @@ async def test_consultation_flow_invokes_consultation_node() -> None:
     graph = build_graph(
         gateway=gateway,  # type: ignore[arg-type]
         document_repo=repo,  # type: ignore[arg-type]
+        searcher=_searcher(),  # type: ignore[arg-type]
         checkpointer=InMemorySaver(),
     )
     state = initial_state(
@@ -455,3 +489,28 @@ def test_messages_field_has_reducer_for_concat() -> None:
     msg_hint = hints["messages"]
     metadata = msg_hint.__metadata__
     assert operator.add in metadata
+
+
+# ===========================================================================
+# build_graph — indexer opcional (Fase 3.6)
+# ===========================================================================
+
+
+def test_build_graph_accepts_indexer_kwarg() -> None:
+    """`indexer` es opcional; pasar uno compila el grafo igual."""
+    from dataclasses import dataclass as _dc
+
+    @_dc
+    class _StubIndexer:
+        async def index_document(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            raise NotImplementedError
+
+    gateway = _FakeGateway()
+    repo = _FakeDocRepo()
+    graph = build_graph(
+        gateway=gateway,  # type: ignore[arg-type]
+        document_repo=repo,  # type: ignore[arg-type]
+        searcher=_searcher(),  # type: ignore[arg-type]
+        indexer=_StubIndexer(),  # type: ignore[arg-type]
+    )
+    assert graph is not None
