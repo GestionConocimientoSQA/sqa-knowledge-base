@@ -28,6 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sqa_kb.adapters.auth.dev import DevTokenValidator
 from sqa_kb.adapters.checkpointer import CheckpointerBundle, build_checkpointer
+from sqa_kb.adapters.embeddings.cohere import CohereEmbedder
 from sqa_kb.adapters.llm import AnthropicDirectGateway
 from sqa_kb.adapters.repositories.postgres import (
     create_engine,
@@ -64,10 +65,12 @@ from sqa_kb.api.documents import router as documents_router
 from sqa_kb.api.health import register_health_check
 from sqa_kb.api.health import router as health_router
 from sqa_kb.api.messages import router as messages_router
+from sqa_kb.api.queries import router as queries_router
 from sqa_kb.api.sessions import router as sessions_router
 from sqa_kb.api.sse import SseEventBuffer
 from sqa_kb.api.taxonomy import router as taxonomy_router
 from sqa_kb.config import LlmGatewayKind, Settings, get_settings
+from sqa_kb.rag.hybrid_search import HybridSearcher
 from sqa_kb.middleware.error_handler import register_error_handlers
 from sqa_kb.middleware.request_id import RequestIdMiddleware
 from sqa_kb.observability.logging import configure_logging, get_logger
@@ -107,12 +110,39 @@ def _wire_persistence(app: FastAPI, settings: Settings) -> None:
     register_health_check(PostgresHealthCheck(engine))
 
 
+def _wire_search(app: FastAPI, settings: Settings) -> None:
+    """Inicializa el embedder + HybridSearcher (Fase 3.5).
+
+    Requiere `session_factory` (de `_wire_persistence`) + `cohere_api_key`.
+    Si falta la key, saltea el wiring; el endpoint `/queries` y los nodos
+    del agente que dependan del searcher devolverán 500 con mensaje claro
+    vía `_from_state`. Los tests unitarios inyectan fakes y no necesitan
+    este wiring.
+    """
+    if getattr(app.state, "session_factory", None) is None:
+        return
+    if settings.cohere_api_key is None:
+        return
+
+    embedder = CohereEmbedder(
+        api_key=settings.cohere_api_key.get_secret_value(),
+        model=settings.cohere_embed_model,
+    )
+    searcher = HybridSearcher(
+        embedder=embedder,
+        session_factory=app.state.session_factory,
+    )
+    app.state.embedder = embedder
+    app.state.kb_searcher = searcher
+
+
 async def _wire_agent(app: FastAPI, settings: Settings) -> CheckpointerBundle | None:
     """Inicializa el grafo del agente (Fase 2) + buffer SSE.
 
-    Requiere DB + LLM gateway config. Si falta cualquier prerrequisito,
-    el wiring se saltea y los endpoints `/sessions/{id}/messages` van a
-    devolver 500 con mensaje claro (vía `_from_state`).
+    Requiere DB + LLM gateway config + searcher (Fase 3.5). Si falta
+    cualquier prerrequisito, el wiring se saltea y los endpoints
+    `/sessions/{id}/messages` van a devolver 500 con mensaje claro
+    (vía `_from_state`).
     """
     if settings.database_url is None:
         return None
@@ -124,6 +154,11 @@ async def _wire_agent(app: FastAPI, settings: Settings) -> CheckpointerBundle | 
         # Fase 1B-azure cableará LiteLLM; por ahora solo soportamos directo.
         return None
     if settings.anthropic_api_key is None:
+        return None
+    if getattr(app.state, "kb_searcher", None) is None:
+        # Sin searcher (cohere_api_key ausente), los nodos identification
+        # + consultation no pueden funcionar. No cableamos el grafo —
+        # mejor 500 explícito que un grafo a medias.
         return None
 
     # Checkpointer Postgres del paquete oficial (Fase 2.1).
@@ -139,6 +174,7 @@ async def _wire_agent(app: FastAPI, settings: Settings) -> CheckpointerBundle | 
     graph = build_graph(
         gateway=gateway,
         document_repo=app.state.document_repo,
+        searcher=app.state.kb_searcher,
         ingestion_repo=app.state.ingestion_repo,
         checkpointer=bundle.saver,
     )
@@ -151,8 +187,10 @@ async def _wire_agent(app: FastAPI, settings: Settings) -> CheckpointerBundle | 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Lifespan que abre/cierra el checkpointer del agente."""
+    """Lifespan que cablea search + agente y libera recursos al apagar."""
     settings = get_settings()
+    # Search debe armarse ANTES del agente — el grafo lo necesita.
+    _wire_search(app, settings)
     bundle = await _wire_agent(app, settings)
     try:
         yield
@@ -204,6 +242,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions_router)
     app.include_router(messages_router)
     app.include_router(dashboard_router)
+    app.include_router(queries_router)
 
     @app.get("/", tags=["root"])
     async def root() -> dict[str, str]:

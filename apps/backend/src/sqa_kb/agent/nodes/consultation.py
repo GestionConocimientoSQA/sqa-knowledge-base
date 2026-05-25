@@ -2,7 +2,7 @@
 
 Una sola pregunta por turno:
 1. Toma la última pregunta del usuario.
-2. Busca en el KB (stub full-text de Fase 1; Fase 3 vector).
+2. Busca chunks en el KB con `search_kb_chunks` (hybrid vector + FTS).
 3. Llama al LLM para sintetizar respuesta con citaciones.
 4. Emite la respuesta + `awaiting=consult_more` para que el usuario pueda
    seguir preguntando.
@@ -11,18 +11,20 @@ Sin chunks → mensaje de "no encontré info" + sugerencia de capturar
 (`relevance_level=sin_resultados`).
 
 Diseño:
-- Stub de chunks: usamos `search_kb` que devuelve `ExistingDocument`. Para
-  el sintetizador necesitamos algo más rico (con content). En 2.5 usamos
-  el `titulo` como content stub — Fase 3 trae chunks vectoriales reales.
+- Desde Fase 3.5: `search_kb_chunks` devuelve `HybridChunk` reales con
+  `content` largo (extraído del indexer). Antes (Fase 2.5) era stub que
+  inventaba content desde el titulo.
 - LLM call sin cache_control: cada consulta es distinta, no se beneficia
   del prompt caching (sí en Fase 2.6+ cuando agreguemos skills inyectados
   en el system prompt).
+- `_classify_relevance` recibe `distance = 1 - score` para mantener la
+  semántica del threshold ROADMAP §17.7.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -30,53 +32,64 @@ from sqa_kb.agent.state import AgentState
 from sqa_kb.agent.templates import render
 from sqa_kb.agent.tools import (
     build_citations_from_results,
-    search_kb,
+    search_kb_chunks,
     synthesize_consultation_answer,
 )
 from sqa_kb.ports.gateways import LlmGateway
-from sqa_kb.ports.repositories import DocumentRepository
+from sqa_kb.rag.hybrid_search import HybridChunk, HybridSearcher
 
 logger = logging.getLogger(__name__)
 
 NodeFn = Callable[[AgentState], Awaitable[dict[str, Any]]]
 
-# Threshold del retriever stub. Por debajo de 0.5 consideramos match alto;
-# entre 0.5 y 0.8 medio; >= 0.8 sin resultados útiles. Fase 3 calibra con
-# datos reales.
+# Threshold de relevancia del retriever real. Espejo de ROADMAP §17.7:
+# distance <= 0.55 → alta; 0.55-0.65 → media; > 0.65 → sin_resultados.
+# Lo dejamos ligeramente más permisivo (0.5/0.8) porque el hybrid score
+# combinado puede ser un poco más alto que el coseno crudo.
 HIGH_RELEVANCE_THRESHOLD: float = 0.5
 MEDIUM_RELEVANCE_THRESHOLD: float = 0.8
+
+CHUNKS_FOR_SYNTHESIS: int = 5
+"""Cuántos chunks alimentar al sintetizador LLM. Más chunks saturan el
+context; menos pierden cobertura. 5 es el sweet spot empírico."""
 
 
 def make_consultation_node(
     *,
     gateway: LlmGateway,
-    document_repo: DocumentRepository,
+    searcher: HybridSearcher,
 ) -> NodeFn:
-    """Factory que captura gateway + repo."""
+    """Factory que captura gateway + searcher."""
 
     async def consultation(state: AgentState) -> dict[str, Any]:
         query = _last_user_msg(state)
         if not query:
             return _ask_for_query(state)
 
-        existing = await search_kb(document_repo, query=query, top_k=5)
+        chunks = await search_kb_chunks(
+            searcher, query=query, top_k=CHUNKS_FOR_SYNTHESIS
+        )
 
-        if not existing:
+        if not chunks:
             return _emit_no_results(state, query=query)
 
-        nearest = existing[0].distance
-        relevance = _classify_relevance(nearest)
+        # `distance = 1 - score` para reusar la semántica del threshold.
+        # El `HybridChunk` ya viene ordenado desc por score, así que el
+        # primero es el más cercano.
+        nearest_score = chunks[0].score
+        nearest_distance = max(0.0, 1.0 - nearest_score)
+        relevance = _classify_relevance(nearest_distance)
 
-        chunks = _chunks_from_existing(existing)
+        chunk_dicts = _hybrid_chunks_to_dicts(chunks)
         try:
             answer = await synthesize_consultation_answer(
-                gateway, query=query, chunks=chunks
+                gateway, query=query, chunks=chunk_dicts
             )
         except Exception as exc:  # noqa: BLE001 — degradar a "no pude responder"
             logger.exception("Síntesis LLM falló: %s", exc)
             return _emit_synthesis_error(state, query=query)
 
-        citations = build_citations_from_results(chunks)
+        citations = build_citations_from_results(chunk_dicts)
         text = render(
             "consultation_answer.j2",
             query=query,
@@ -106,7 +119,7 @@ def make_consultation_node(
 
 
 def _classify_relevance(distance: float) -> str:
-    """Clasifica relevancia según `distance` del retriever stub."""
+    """Clasifica relevancia según `distance = 1 - score_combinado`."""
     if distance <= HIGH_RELEVANCE_THRESHOLD:
         return "alta"
     if distance <= MEDIUM_RELEVANCE_THRESHOLD:
@@ -114,22 +127,26 @@ def _classify_relevance(distance: float) -> str:
     return "sin_resultados"
 
 
-def _chunks_from_existing(existing: list) -> list[dict[str, str]]:
-    """Convierte `ExistingDocument` (stub de search) en chunks aptos para
-    el sintetizador. Stub: usa `filename` como contenido — Fase 3 trae
-    chunks vectoriales reales con `content` largo."""
-    chunks: list[dict[str, str]] = []
-    for doc in existing:
-        chunks.append(
+def _hybrid_chunks_to_dicts(chunks: Sequence[HybridChunk]) -> list[dict[str, str]]:
+    """Convierte `HybridChunk` (DTO del retriever) a dicts que el
+    sintetizador y `build_citations_from_results` consumen.
+
+    Mantenemos los dicts como contrato del prompt LLM en `tools.py`
+    (no cambiar la firma de `synthesize_consultation_answer` para no
+    romper sus tests). Es una capa de adaptación delgada acá.
+    """
+    out: list[dict[str, str]] = []
+    for c in chunks:
+        out.append(
             {
-                "document_id": doc.document_id,
-                "filename": doc.filename,
-                "content": f"Documento {doc.filename} en {doc.category}.",
-                "section_title": "",
-                "chunk_id": f"stub-{doc.document_id}",
+                "document_id": c.document_id,
+                "filename": c.document_id + ".md",
+                "content": c.content,
+                "section_title": c.section_title,
+                "chunk_id": c.chunk_id,
             }
         )
-    return chunks
+    return out
 
 
 def _last_user_msg(state: AgentState) -> str:

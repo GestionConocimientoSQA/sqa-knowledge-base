@@ -1,6 +1,6 @@
 # Estado de implementación · SQA Knowledge Base
 
-> **Última actualización:** 2026-05-25 (Fase 3 en progreso · 3.0/3.1/3.2/3.3/3.4 cerradas, 3.5-3.7 pendientes)
+> **Última actualización:** 2026-05-25 (Fase 3 en progreso · 3.0/3.1/3.2/3.3/3.4/3.5 cerradas, 3.6-3.7 pendientes)
 > **Documento vivo** — se actualiza al cierre de cada fase.
 > Fuente de verdad para `qué está hecho / en curso / pendiente`.
 
@@ -9,13 +9,13 @@
 | Indicador | Valor |
 |---|---|
 | Timeline estimado total | 16-20 semanas |
-| Avance ponderado | **~68% del proyecto total** (≈13.5 de 20 semanas-equivalentes) |
+| Avance ponderado | **~72% del proyecto total** (≈14.5 de 20 semanas-equivalentes) |
 | Fases completadas | **9** (Fase 0, 1A, 1B-local, 2, 5, 6, 7, 10A, 10B) |
-| Fase actual | **Fase 3 · RAG vectorial 🔄** — sub-fases 3.0/3.1/3.2/3.3/3.4 cerradas, 3.5-3.7 pendientes · branch `fase-3-rag-vectorial` (NO mergeado a master) |
-| Próxima sub-fase | **3.5** — Endpoint `POST /queries` + reemplazar `search_kb` stub |
+| Fase actual | **Fase 3 · RAG vectorial 🔄** — sub-fases 3.0/3.1/3.2/3.3/3.4/3.5 cerradas, 3.6-3.7 pendientes · branch `fase-3-rag-vectorial` (NO mergeado a master) |
+| Próxima sub-fase | **3.6** — Script `reindex_all.py` + hooks de indexación desde generation/index_ingestion |
 | Bloqueo externo | Fase 1B-azure (Entra ID real) sigue esperando App Registration por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI + PostgreSQL + agente LangGraph ✓ · Infra Bicep esqueleto ✓ |
-| Tests totales | 577 backend + 220 frontend = **797 tests verdes** |
+| Tests totales | 596 backend + 220 frontend = **816 tests verdes** |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
 
 ## Tabla de fases
@@ -25,7 +25,7 @@
 | **0** | **Fundación (monorepo + infra + Azure)** | **1** | **✅ Completada** | **100%** |
 | **1** | **Backend · Persistencia + Auth (1A + 1B-local)** | **2-3** | **✅ Completada (excepto 1B-azure)** | Clean Architecture + PG real + dev auth + endpoints CRUD + frontend conectado. 1B-azure (Entra ID real) bloqueado por TI. |
 | **2** | **Backend · Agente LangGraph (ETAPAS)** | **4-6** | **✅ Completada** | Adapter LLM + AgentState + checkpointer + grafo + 3 modos + endpoint SSE con 14 eventos. 420 tests. |
-| **3** | **Backend · RAG vectorial** | **7-8** | **🔄 En progreso (71%)** | 3.0 adapter Cohere + 3.1 chunker + 3.2 indexer + 3.3 retriever HNSW + 3.4 hybrid search 70/30 cerradas. Faltan 3.5-3.7 (endpoint /queries + reindex script + eval). 577 tests. |
+| **3** | **Backend · RAG vectorial** | **7-8** | **🔄 En progreso (85%)** | 3.0 adapter Cohere + 3.1 chunker + 3.2 indexer + 3.3 retriever HNSW + 3.4 hybrid search + 3.5 endpoint /queries + search_kb real cerradas. Faltan 3.6-3.7 (reindex script + eval). 596 tests. |
 | 4 | Backend · Generación y extracción de docs | 9-10 | ⬜ Pendiente | 0% |
 | **5** | **Frontend · Fundación (UI + auth stub)** | **11-12** | **✅ Completada** | **100%** |
 | **6** | **Frontend · Chat streaming SSE (con mock-transport)** | **13-14** | **✅ Completada** | **100%** |
@@ -438,12 +438,43 @@ Indexación de documentos + búsqueda semántica con boost de autoritativos. Lat
 - **CTE única vs composición de retriever**: una sola query SQL evita 2 round-trips y duplicación de filtros del lado de aplicación. Costo: ~10% más LOC vs componer `VectorRetriever`; beneficio: el planner optimiza ambas ramas + ambos índices en un mismo plan.
 - **HybridChunk separado de RetrievedChunk**: composición vía duplicación intencional para no acoplar DTOs. Si en el futuro convergen, se extrae base común.
 
-### ⬜ 3.5 — Endpoint `POST /queries` + reemplazar `search_kb` stub (pendiente)
+### ✅ 3.5 — Endpoint `POST /queries` + reemplazar `search_kb` stub (cerrada)
 
-- Endpoint en `api/queries.py` (consulta directa sin sesión, devuelve top-k + citaciones).
-- Mejorar `GET /documents/search` con filtros.
-- Reemplazar el stub de `agent/tools.py search_kb` con búsqueda hybrid real (impacta los nodos identification + consultation del agente).
-- Tests integración.
+- **Settings**: `cohere_api_key: SecretStr | None` + `cohere_embed_model` (default `embed-multilingual-v3.0`). Validador exige la key en staging/prod si `vector_store=pgvector`; en dev local es opcional (los tests usan fakes y el `_wire_search` saltea sin la key).
+- **`agent/tools.py` refactor**:
+  - `search_kb` cambia firma — recibe `HybridSearcher` en vez de `DocumentRepository`. Internamente: pide `top_k * CHUNK_OVERSAMPLE=5` chunks al searcher, dedupea por `document_id` quedándose con el chunk de mejor score, convierte a `ExistingDocument` con `distance = clip(1 - score, 0, 1)`. El contrato del state del agente (`ExistingDocument` + `distance` comparable contra thresholds) NO cambia.
+  - Nuevo `search_kb_chunks` — devuelve `Sequence[HybridChunk]` directo (sin dedupe). Lo consume `consultation` que quiere `content` real para sintetizar respuesta.
+- **Nodos `identification` y `consultation`**: ahora reciben `searcher: HybridSearcher` (no más `document_repo`). `consultation._chunks_from_existing` (stub que inventaba content desde filename) reemplazado por `_hybrid_chunks_to_dicts` que adapta los HybridChunk reales al formato dict que `synthesize_consultation_answer` consume. `relevance` se calcula desde `distance = 1 - score`.
+- **`graph.build_graph`** acepta `searcher: HybridSearcher` (kwarg obligatorio). Si falta cohere_api_key al startup, `_wire_agent` saltea el grafo (mejor 500 explícito que un grafo a medias).
+- **`POST /queries`** en `api/queries.py`:
+  - Body: `query` (1-2000 chars), `top_k` (1-50), `carpetas`/`tipos` (opcionales, listas vacías = no-filtro), `authoritative_only`.
+  - Response: `query_id`, `items: list[QueryChunkPayload]` (incluye `vector_score` + `fulltext_score` para transparencia), `total_returned`, `has_result`.
+  - Persiste 1 fila en `queries` + N filas en `query_citations` (una por chunk top-K) — alimenta hot_topics + gap detection del dashboard.
+  - **Sin IDOR enforcement**: el KB es lectura global. Filtros viajan como scope del query, no como control de acceso.
+  - Auth: `CurrentUser` (espejo del resto de endpoints autenticados).
+  - Validación: `query` vacía / `top_k` fuera de rango / `carpetas` con código inválido → 422.
+  - Section title vacío del chunker → fallback `"—"` en la cita persistida (la entidad `QueryCitation.section` es `NonEmptyStr`).
+- **Wiring `main.py`**: nuevo `_wire_search(app, settings)` construye `CohereEmbedder` + `HybridSearcher` y los guarda en `app.state.kb_searcher`. Corre antes de `_wire_agent` en el lifespan. `dependencies.py` expone `KbSearcherDep` para los routers.
+
+**24 tests por sub-fase 3.5** (+19 netos: 10 unit + 4 integration nuevos + 5 tests refactorizados):
+
+| Archivo | Tests | Cubre |
+|---|---:|---|
+| `tests/test_agent_tools.py` (refactor) | **6 nuevos** | search_kb con HybridSearcher fake (empty query no embedea, sin matches []) , distance = 1 - score, dedup por document_id (3 chunks mismo doc → 1 result con mejor score), top_k limita docs únicos con oversample al searcher, distance clipped a 0 cuando score > 1 por boost, search_kb_chunks sin dedup |
+| `tests/test_agent_nodes.py` (refactor) | **9 actualizados** | identification con `searcher` (no doc_repo). Caso duplicate detectado con `score=0.9 → distance=0.1 ≤ threshold`, caso `existing_documents` con chunk lejano `score=0.3 → distance=0.7 > threshold`, edge cases sin user msg, etc. |
+| `tests/test_agent_nodes_consultation.py` (refactor) | **9 actualizados** | consultation con `searcher` + HybridChunk reales. Nuevo `test_consultation_relevance_calculated_from_score` end-to-end (`score=0.4 → distance=0.6 → bucket "media"`). Citations acumuladas, error LLM degradado. |
+| `tests/test_agent_graph.py` (refactor) | **5 actualizados** | `build_graph(..., searcher=_FakeSearcher())` en todos los casos. |
+| `tests/test_api_queries.py` | **10 nuevos** | happy path con persistencia en fake repo, no-results persiste con has_result=False sin citations, filtros propagan al searcher (carpetas/tipos/authoritative_only/top_k), defaults sin filtros, validación 422 (query vacía, top_k fuera de rango, carpetas/tipos inválidos), section title vacío → "—" en la cita persistida |
+| `tests/integration/test_api_queries_pg.py` | **4 nuevos** | POST /queries end-to-end contra PG real: persiste fila en `queries` con `user_oid`/`has_result`, N filas en `query_citations`, no-results persiste sin citations, sin Bearer → 401 |
+
+**Suite full backend post-3.5**: 596 passed (577 → 596). Tiempo ~52s.
+
+**Decisiones técnicas registradas:**
+- **`search_kb` mantiene `ExistingDocument` como output** — contrato del `AgentState` no cambia. La conversión `HybridChunk → ExistingDocument` con dedup vive en `tools.py`.
+- **`HybridSearcher` se inyecta concreto, sin puerto formal** — premature abstraction. Un solo implementador (pgvector). Si Azure AI Search aparece en Fase 11, se refactoriza.
+- **`POST /queries` no acepta `session_id`** todavía — el modo B "rapid query" del frontend no lo necesita. Si más adelante se quiere correlacionar consultas con sesiones, se agrega como opcional.
+- **`GET /documents/search` se deja en stub ILIKE** — funciona para el Explorer del frontend; migrar a hybrid se hará en 3.7 si el eval set lo justifica.
+- **Sin tests de wiring de `_wire_search`** — es trivial (sin key → skip, con key → construye). Cubierto implícitamente al correr el backend en dev.
 
 ### ⬜ 3.6 — Script `reindex_all.py` + hooks de indexación (pendiente)
 

@@ -3,7 +3,7 @@
 Flujo:
 1. Extrae el `topic` del último mensaje user (heurística simple — el LLM
    no agrega valor para topic extraction de un solo mensaje).
-2. `search_kb(topic)` → lista de documentos similares.
+2. `search_kb(topic)` → lista de documentos similares (hybrid vector+FTS).
 3. `classify_topic(topic, history)` → carpeta + tipo + confidence.
 4. Si hay match cercano (`distance <= DUPLICATE_THRESHOLD`):
    → render `duplicate_found.j2`, espera `update_decision`.
@@ -18,7 +18,10 @@ Salida (partial state update):
 Diseño:
 - LLM solo se usa en `classify_topic` — esta función vive en `tools.py`
   con tests propios.
-- `search_kb` es stub en 2.3 (full-text), Fase 3 lo cambia a vector.
+- `search_kb` usa `HybridSearcher` desde Fase 3.5 (antes era stub
+  full-text de Fase 2.3). El contrato del nodo no cambió — sigue
+  recibiendo `ExistingDocument` con `distance` comparable contra
+  `DUPLICATE_THRESHOLD`.
 - El threshold de duplicate (`0.55` por ROADMAP §16) es constante del
   módulo para que tests/admin lo ajusten sin tocar el nodo.
 """
@@ -33,7 +36,7 @@ from sqa_kb.agent.state import AgentState
 from sqa_kb.agent.templates import render
 from sqa_kb.agent.tools import classify_topic, search_kb
 from sqa_kb.ports.gateways import LlmGateway
-from sqa_kb.ports.repositories import DocumentRepository
+from sqa_kb.rag.hybrid_search import HybridSearcher
 
 NodeFn = Callable[[AgentState], Awaitable[dict[str, Any]]]
 
@@ -50,12 +53,12 @@ contexto. 3 es el sweet spot del ROADMAP."""
 def make_identification_node(
     *,
     gateway: LlmGateway,
-    document_repo: DocumentRepository,
+    searcher: HybridSearcher,
 ) -> NodeFn:
-    """Factory que captura gateway + repo en closure.
+    """Factory que captura gateway + searcher en closure.
 
-    Recibimos los puertos (no implementaciones concretas) para que `graph.py`
-    inyecte real o fake según el contexto.
+    `searcher` reemplaza al `document_repo` de Fase 2.3 — el nodo ya no
+    necesita el repo de docs, solo el componente de búsqueda.
     """
 
     async def identification(state: AgentState) -> dict[str, Any]:
@@ -64,7 +67,7 @@ def make_identification_node(
             return _ask_for_topic(state)
 
         existing = await search_kb(
-            document_repo, query=topic, top_k=MAX_KB_RESULTS
+            searcher, query=topic, top_k=MAX_KB_RESULTS
         )
         classification = await classify_topic(
             gateway,

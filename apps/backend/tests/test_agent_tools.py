@@ -1,19 +1,20 @@
-"""Tests de las tools del agente (Fase 2.3).
+"""Tests de las tools del agente (Fase 2.3, refactor en Fase 3.5).
 
 Cubren:
-- `search_kb`: empty query, sin matches, dummy distances, shape.
+- `search_kb`: empty query, sin matches, dedup por document_id,
+  distance = 1 - score, top_k limita docs únicos.
+- `search_kb_chunks`: empty query → [], devuelve chunks tal cual sin dedup.
 - `classify_topic`: happy path JSON limpio, JSON envuelto en markdown,
   confidence como string, empty topic → ValueError, JSON malformado →
   ValueError.
 
-Sin tocar Anthropic real — todos los tests usan un `LlmGateway` fake.
+Sin tocar Anthropic ni Cohere reales — todos los tests usan fakes.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 
 import pytest
 
@@ -21,62 +22,69 @@ from sqa_kb.agent.tools import (
     _parse_classification,
     classify_topic,
     search_kb,
+    search_kb_chunks,
 )
-from sqa_kb.domain.entities import Document
-from sqa_kb.domain.value_objects import CategoryCode, DocStatus, DocTypeCode
 from sqa_kb.ports.gateways import ChatMessage, LlmCompletion
+from sqa_kb.rag.hybrid_search import HybridChunk
 
 # ===========================================================================
 # Fakes
 # ===========================================================================
 
 
-def _doc(id: str, carpeta: str = "TEC", tipo: str = "MTEC") -> Document:
-    now = datetime.now(UTC)
-    return Document(
-        id=id,
-        titulo="Test doc",
-        carpeta=CategoryCode(carpeta),
-        tipo=DocTypeCode(tipo),
-        autoritativo=False,
-        estado=DocStatus.VIGENTE,
-        autor_name="A",
-        autor_role="QA",
-        fecha=now,
-        revision=now,
-        version="1.0",
-        formato="MD",
+def _chunk(
+    *,
+    chunk_id: str = "chk-1",
+    document_id: str = "TEC-foo-2026-01-01",
+    chunk_index: int = 0,
+    score: float = 0.8,
+    document_title: str = "Test doc",
+    document_type: str = "MTEC",
+    document_category: str = "TEC",
+    authoritative: bool = False,
+    content: str = "contenido",
+    section_title: str = "Intro",
+) -> HybridChunk:
+    return HybridChunk(
+        chunk_id=chunk_id,
+        document_id=document_id,
+        chunk_index=chunk_index,
+        content=content,
+        snippet=content[:240],
+        section_title=section_title,
+        score=score,
+        vector_score=score,
+        fulltext_score=0.0,
+        document_title=document_title,
+        document_type=document_type,
+        document_category=document_category,
+        authoritative=authoritative,
     )
 
 
 @dataclass
-class _FakeDocRepo:
-    """Implementa el subset de DocumentRepository que search_kb necesita."""
+class _FakeSearcher:
+    """Implementa la API mínima del `HybridSearcher`."""
 
-    docs_to_return: list[Document]
+    chunks_to_return: list[HybridChunk] = field(default_factory=list)
     last_query: str = ""
-    last_limit: int = 0
+    last_top_k: int = 0
+    call_count: int = 0
 
-    async def search(  # noqa: PLR0913 — espejo del puerto
+    async def search(
         self,
+        query: str,
         *,
-        query: str | None = None,
-        carpetas: object = None,
-        tipos: object = None,
-        estados: object = None,
-        autoritativo: object = None,
-        anonimizado: object = None,
-        min_score: object = None,
-        date_from: object = None,
-        date_to: object = None,
-        author_oid: object = None,
-        sort_by: object = None,
-        limit: int = 20,
-        offset: int = 0,
-    ) -> tuple[Sequence[Document], int]:
-        self.last_query = query or ""
-        self.last_limit = limit
-        return list(self.docs_to_return), len(self.docs_to_return)
+        top_k: int = 5,
+        carpetas: Iterable[str] | None = None,  # noqa: ARG002
+        tipos: Iterable[str] | None = None,  # noqa: ARG002
+        authoritative_only: bool = False,  # noqa: ARG002
+        authoritative_boost: float | None = None,  # noqa: ARG002
+    ) -> Sequence[HybridChunk]:
+        self.last_query = query
+        self.last_top_k = top_k
+        self.call_count += 1
+        return list(self.chunks_to_return)
 
 
 @dataclass
@@ -113,54 +121,114 @@ class _FakeGateway:
 
 
 # ===========================================================================
-# search_kb
+# search_kb (Fase 3.5 — usa HybridSearcher fake)
 # ===========================================================================
 
 
 async def test_search_kb_empty_query_returns_empty() -> None:
-    repo = _FakeDocRepo(docs_to_return=[_doc("TEC-foo-2026-01-01")])
-    result = await search_kb(repo, query="", top_k=3)  # type: ignore[arg-type]
+    searcher = _FakeSearcher(chunks_to_return=[_chunk()])
+    result = await search_kb(searcher, query="", top_k=3)  # type: ignore[arg-type]
     assert result == []
-    # Y NO debería haber llamado al repo:
-    assert repo.last_query == ""
+    # Y NO debería haber llamado al searcher.
+    assert searcher.call_count == 0
 
 
 async def test_search_kb_whitespace_only_query_returns_empty() -> None:
-    repo = _FakeDocRepo(docs_to_return=[_doc("TEC-foo-2026-01-01")])
-    result = await search_kb(repo, query="   \t\n  ", top_k=3)  # type: ignore[arg-type]
+    searcher = _FakeSearcher(chunks_to_return=[_chunk()])
+    result = await search_kb(searcher, query="   \t\n  ", top_k=3)  # type: ignore[arg-type]
     assert result == []
+    assert searcher.call_count == 0
 
 
 async def test_search_kb_no_matches_returns_empty() -> None:
-    repo = _FakeDocRepo(docs_to_return=[])
-    result = await search_kb(repo, query="nada", top_k=3)  # type: ignore[arg-type]
+    searcher = _FakeSearcher(chunks_to_return=[])
+    result = await search_kb(searcher, query="nada", top_k=3)  # type: ignore[arg-type]
     assert result == []
-    # Pero SÍ consultó al repo:
-    assert repo.last_query == "nada"
+    # Pero SÍ consultó al searcher.
+    assert searcher.last_query == "nada"
 
 
-async def test_search_kb_returns_existing_documents_with_dummy_distance() -> None:
-    docs = [
-        _doc("TEC-flaky-2026-01-01"),
-        _doc("TEC-other-2026-02-01"),
+async def test_search_kb_returns_existing_documents_with_distance_from_score() -> None:
+    """distance = clip(1 - score, 0, 1). 2 chunks de DISTINTOS docs → 2 docs."""
+    chunks = [
+        _chunk(chunk_id="c1", document_id="TEC-flaky-2026-01-01", score=0.8),
+        _chunk(chunk_id="c2", document_id="TEC-other-2026-02-01", score=0.6),
     ]
-    repo = _FakeDocRepo(docs_to_return=docs)
-    result = await search_kb(repo, query="flaky", top_k=2)  # type: ignore[arg-type]
+    searcher = _FakeSearcher(chunks_to_return=chunks)
+    result = await search_kb(searcher, query="flaky", top_k=2)  # type: ignore[arg-type]
 
     assert len(result) == 2
-    # Posiciones → distance 0.30, 0.40 (stub linear).
-    assert result[0].distance == 0.30
-    assert result[1].distance == 0.40
     assert result[0].document_id == "TEC-flaky-2026-01-01"
+    assert result[0].distance == pytest.approx(0.2)  # 1 - 0.8
+    assert result[1].distance == pytest.approx(0.4)  # 1 - 0.6
 
 
-async def test_search_kb_respects_top_k() -> None:
-    docs = [_doc(f"TEC-x{i}-2026-01-{i:02d}") for i in range(1, 6)]
-    repo = _FakeDocRepo(docs_to_return=docs[:3])  # repo limita
-    result = await search_kb(repo, query="x", top_k=3)  # type: ignore[arg-type]
+async def test_search_kb_deduplicates_chunks_by_document_id() -> None:
+    """Si el searcher devuelve N chunks del mismo doc, el resultado tiene
+    el doc UNA sola vez con el mejor score (chunk con mayor score)."""
+    chunks = [
+        # Mismo doc, 3 chunks; el primero (mejor score) gana.
+        _chunk(chunk_id="c1", document_id="TEC-foo", chunk_index=0, score=0.9),
+        _chunk(chunk_id="c2", document_id="TEC-foo", chunk_index=1, score=0.7),
+        _chunk(chunk_id="c3", document_id="TEC-foo", chunk_index=2, score=0.5),
+        # Otro doc.
+        _chunk(chunk_id="c4", document_id="TEC-bar", chunk_index=0, score=0.6),
+    ]
+    searcher = _FakeSearcher(chunks_to_return=chunks)
+    result = await search_kb(searcher, query="x", top_k=5)  # type: ignore[arg-type]
+
+    assert len(result) == 2
+    foo = next(d for d in result if d.document_id == "TEC-foo")
+    assert foo.distance == pytest.approx(0.1)  # 1 - 0.9, no 1 - 0.5
+
+
+async def test_search_kb_top_k_limits_unique_docs_not_chunks() -> None:
+    """`top_k=2` → 2 documentos únicos. Pide oversample al searcher para
+    cubrir el caso de muchos chunks por doc."""
+    chunks = [_chunk(chunk_id=f"c{i}", document_id=f"DOC-{i}", score=0.9 - i * 0.05)
+              for i in range(5)]
+    searcher = _FakeSearcher(chunks_to_return=chunks)
+    result = await search_kb(searcher, query="x", top_k=2)  # type: ignore[arg-type]
+
+    assert len(result) == 2
+    # Oversample: top_k=2 pide al menos top_k * CHUNK_OVERSAMPLE al searcher.
+    assert searcher.last_top_k >= 2 * 5
+
+
+async def test_search_kb_distance_clipped_to_zero_when_score_exceeds_one() -> None:
+    """Boost autoritativo puede llevar score > 1 → distance NO negativa."""
+    chunks = [_chunk(score=1.15, authoritative=True)]
+    searcher = _FakeSearcher(chunks_to_return=chunks)
+    result = await search_kb(searcher, query="x", top_k=1)  # type: ignore[arg-type]
+    assert result[0].distance == 0.0
+
+
+# ===========================================================================
+# search_kb_chunks
+# ===========================================================================
+
+
+async def test_search_kb_chunks_empty_query_returns_empty() -> None:
+    searcher = _FakeSearcher(chunks_to_return=[_chunk()])
+    result = await search_kb_chunks(searcher, query="", top_k=3)  # type: ignore[arg-type]
+    assert list(result) == []
+    assert searcher.call_count == 0
+
+
+async def test_search_kb_chunks_returns_chunks_without_dedup() -> None:
+    """Sin agregación — el caller (consultation) quiere todos los chunks
+    para sintetizar respuesta."""
+    chunks = [
+        _chunk(chunk_id="c1", document_id="DOC-1", chunk_index=0, score=0.9),
+        _chunk(chunk_id="c2", document_id="DOC-1", chunk_index=1, score=0.7),
+        _chunk(chunk_id="c3", document_id="DOC-2", chunk_index=0, score=0.6),
+    ]
+    searcher = _FakeSearcher(chunks_to_return=chunks)
+    result = list(await search_kb_chunks(searcher, query="x", top_k=5))  # type: ignore[arg-type]
 
     assert len(result) == 3
-    assert repo.last_limit == 3
+    assert [c.chunk_id for c in result] == ["c1", "c2", "c3"]
+    assert searcher.last_top_k == 5
 
 
 # ===========================================================================

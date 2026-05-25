@@ -47,6 +47,7 @@ from sqa_kb.ports.repositories import (
     DocumentRepository,
     IngestionRepository,
 )
+from sqa_kb.rag.hybrid_search import HybridSearcher
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -147,17 +148,24 @@ def build_graph(
     *,
     gateway: LlmGateway,
     document_repo: DocumentRepository,
+    searcher: HybridSearcher,
     ingestion_repo: IngestionRepository | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
 ) -> CompiledStateGraph:
     """Construye y compila el grafo del agente.
 
+    Args:
+        gateway: LLM (Anthropic directo o LiteLLM).
+        document_repo: para `generation` (persiste el doc final del modo A).
+        searcher: hybrid vector + FTS — usado por `identification`
+            (búsqueda de duplicados) y `consultation` (modo B).
+        ingestion_repo: opcional, solo necesario para modo C.
+        checkpointer: opcional para tests unitarios — en runtime se pasa
+            el `AsyncPostgresSaver` del lifespan.
+
     `ingestion_repo` es opcional para que tests de Modo A no necesiten
     inyectarlo. Si el grafo se invoca en modo C sin repo, el nodo
     `index_ingestion` falla con last_error.
-
-    `checkpointer` opcional para tests unitarios — en runtime se pasa el
-    `AsyncPostgresSaver` del lifespan.
     """
     graph = StateGraph(AgentState)
 
@@ -165,7 +173,7 @@ def build_graph(
     graph.add_node("welcome", make_welcome_node())
     graph.add_node(
         "identification",
-        make_identification_node(gateway=gateway, document_repo=document_repo),
+        make_identification_node(gateway=gateway, searcher=searcher),
     )
     graph.add_node("free_capture", make_free_capture_node())
     graph.add_node("deep_dive", make_deep_dive_node())
@@ -178,7 +186,7 @@ def build_graph(
     # Modo B
     graph.add_node(
         "consultation",
-        make_consultation_node(gateway=gateway, document_repo=document_repo),
+        make_consultation_node(gateway=gateway, searcher=searcher),
     )
 
     # Modo C

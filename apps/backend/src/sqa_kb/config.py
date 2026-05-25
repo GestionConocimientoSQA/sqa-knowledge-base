@@ -132,6 +132,16 @@ class Settings(BaseSettings):
     azure_ai_search_api_key: SecretStr | None = Field(default=None)
     azure_ai_search_index: str = Field(default="kb-chunks")
 
+    # ---------------- Embeddings (Cohere, Fase 3) ----------------
+
+    cohere_api_key: SecretStr | None = Field(default=None)
+    """Para `adapters/embeddings/cohere.py` (default embed-multilingual-v3.0).
+    Obligatoria en staging/prod si `vector_store=pgvector`. En dev local se
+    puede omitir — los tests no usan red (fakes); el wiring de runtime
+    saltea el HybridSearcher si la key no está y los endpoints `/queries`
+    devuelven 503 con mensaje claro."""
+    cohere_embed_model: str = Field(default="embed-multilingual-v3.0")
+
     # ---------------- LLM gateway ----------------
 
     llm_gateway_kind: LlmGatewayKind = Field(default=LlmGatewayKind.ANTHROPIC_DIRECT)
@@ -195,6 +205,18 @@ class Settings(BaseSettings):
 
         if self.llm_gateway_kind is LlmGatewayKind.LITELLM and not self.litellm_base_url:
             raise ValueError("SQA_KB_LITELLM_BASE_URL es obligatoria con LiteLLM.")
+
+        # Cohere es obligatoria en staging/prod si usamos pgvector — sin
+        # embedder no hay RAG. En dev local se permite vacía y el wiring
+        # saltea el HybridSearcher.
+        if (
+            self.vector_store is VectorStore.PGVECTOR
+            and self.app_env in (AppEnv.STAGING, AppEnv.PROD)
+            and not self.cohere_api_key
+        ):
+            raise ValueError(
+                "SQA_KB_COHERE_API_KEY es obligatoria en staging/prod con vector_store=pgvector."
+            )
 
         return self
 
