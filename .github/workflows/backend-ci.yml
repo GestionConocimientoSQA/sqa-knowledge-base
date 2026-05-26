@@ -58,5 +58,5 @@ jobs:
       - name: Pytest
         run: pytest -q --cov=sqa_kb --cov-report=term-missing
         env:
-          DATABASE_URL: postgresql+asyncpg://sqa:sqa_test_password@localhost:5432/sqa_kb_test
+          SQA_KB_DATABASE_URL: postgresql+asyncpg://sqa:sqa_test_password@localhost:5432/sqa_kb_test
           SQA_KB_APP_ENV: test
