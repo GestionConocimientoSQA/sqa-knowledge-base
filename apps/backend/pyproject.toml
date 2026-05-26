@@ -49,6 +49,17 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM"]
 
+[tool.ruff.lint.per-file-ignores]
+# Alembic genera código con líneas largas (>100) y necesita imports
+# despues del path manipulation (E402). Es código que regenera Alembic
+# y modificarlo a mano se sobreescribiría en el próximo autogenerate.
+"alembic/env.py" = ["E402"]
+"alembic/versions/*.py" = ["E501"]
+# Seed inicial: data-heavy con listas de tuples largas (catálogo de
+# 8 carpetas + 11 tipos de doc del playbook SQA). Romper las líneas
+# perjudica la legibilidad sin valor.
+"src/sqa_kb/adapters/repositories/postgres/seed.py" = ["E501"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 # Mantener el mismo event loop entre tests de la misma sesión. Necesario

@@ -305,8 +305,8 @@ async def test_identification_message_has_required_fields() -> None:
 
     msg = update["messages"][0]
     # Shape esperado por el frontend / SSE
-    for field in ("id", "role", "content", "stage", "status", "started_at"):
-        assert field in msg, f"falta {field}"
+    for fname in ("id", "role", "content", "stage", "status", "started_at"):
+        assert fname in msg, f"falta {fname}"
     assert msg["role"] == "agent"
     assert msg["status"] == "complete"
 

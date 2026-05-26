@@ -29,7 +29,6 @@ from sqa_kb.rag.eval import (
 )
 from sqa_kb.rag.hybrid_search import HybridChunk
 
-
 # ===========================================================================
 # compute_recall_at_k
 # ===========================================================================

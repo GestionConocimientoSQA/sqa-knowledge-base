@@ -36,7 +36,6 @@ from sqa_kb.domain.value_objects import (
     is_valid_stage,
 )
 
-
 # ---------- value_objects ----------
 
 

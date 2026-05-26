@@ -29,8 +29,9 @@ Errors
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Annotated, Sequence
+from typing import Annotated
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field

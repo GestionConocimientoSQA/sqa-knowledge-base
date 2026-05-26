@@ -15,7 +15,6 @@ from sqa_kb.adapters.repositories.postgres.activity import PostgresActivityRepos
 from sqa_kb.adapters.repositories.postgres.audit_log import PostgresAuditLogRepository
 from sqa_kb.adapters.repositories.postgres.documents import PostgresDocumentRepository
 from sqa_kb.adapters.repositories.postgres.ingestion import PostgresIngestionRepository
-from sqa_kb.adapters.repositories.postgres.queries import PostgresQueryRepository
 from sqa_kb.adapters.repositories.postgres.seed import seed
 from sqa_kb.adapters.repositories.postgres.sessions import PostgresSessionRepository
 from sqa_kb.adapters.repositories.postgres.skills import PostgresSkillRepository
@@ -261,7 +260,10 @@ async def test_document_list_by_author_aggregates_stats(session_factory) -> None
     assert stats.total_captures == 2
     assert stats.total_citations_received == 15
     assert 4.0 <= stats.avg_score <= 4.2
-    assert {d.id for d in items} == {f"TEC-test-x{suffix}-2026-05-22", f"TEC-test-y{suffix}-2026-05-22"}
+    assert {d.id for d in items} == {
+        f"TEC-test-x{suffix}-2026-05-22",
+        f"TEC-test-y{suffix}-2026-05-22",
+    }
 
 
 # ===========================================================================

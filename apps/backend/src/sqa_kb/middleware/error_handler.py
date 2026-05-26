@@ -31,6 +31,8 @@ from sqa_kb.domain.errors import (
     NotFoundError,
     RateLimitedError,
     UnauthorizedError,
+)
+from sqa_kb.domain.errors import (
     ValidationError as DomainValidationError,
 )
 from sqa_kb.observability.logging import get_logger

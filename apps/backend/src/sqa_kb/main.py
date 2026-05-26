@@ -40,6 +40,7 @@ from sqa_kb.adapters.repositories.postgres.activity import (
 from sqa_kb.adapters.repositories.postgres.audit_log import (
     PostgresAuditLogRepository,
 )
+from sqa_kb.adapters.repositories.postgres.chunks import PostgresChunkRepository
 from sqa_kb.adapters.repositories.postgres.documents import (
     PostgresDocumentRepository,
 )
@@ -69,7 +70,6 @@ from sqa_kb.api.queries import router as queries_router
 from sqa_kb.api.sessions import router as sessions_router
 from sqa_kb.api.sse import SseEventBuffer
 from sqa_kb.api.taxonomy import router as taxonomy_router
-from sqa_kb.adapters.repositories.postgres.chunks import PostgresChunkRepository
 from sqa_kb.config import LlmGatewayKind, Settings, get_settings
 from sqa_kb.middleware.error_handler import register_error_handlers
 from sqa_kb.middleware.request_id import RequestIdMiddleware

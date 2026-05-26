@@ -38,7 +38,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from sqa_kb.adapters.repositories.postgres.base import Base
 
-
 # ===========================================================================
 # Identidad
 # ===========================================================================
@@ -229,7 +228,7 @@ class SessionModel(Base):
         onupdate=func.now(),
     )
 
-    messages: Mapped[list["MessageModel"]] = relationship(
+    messages: Mapped[list[MessageModel]] = relationship(
         back_populates="session",
         cascade="all, delete-orphan",
         order_by="MessageModel.started_at",
@@ -270,7 +269,7 @@ class MessageModel(Base):
     """Denormalizado de token_usage para queries de cost reporting más rápidas."""
     error_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    session: Mapped["SessionModel"] = relationship(back_populates="messages")
+    session: Mapped[SessionModel] = relationship(back_populates="messages")
 
 
 # ===========================================================================

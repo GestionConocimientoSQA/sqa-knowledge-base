@@ -31,9 +31,7 @@ DEFAULT_TEST_DSN = (
 def _skip_if_no_db() -> bool:
     """True si no hay DB para test — los tests se skipean."""
     # Permitir override para CI / explicit opt-out.
-    if os.environ.get("SQA_KB_SKIP_DB_TESTS") == "1":
-        return True
-    return False
+    return os.environ.get("SQA_KB_SKIP_DB_TESTS") == "1"
 
 
 pytestmark = pytest.mark.skipif(

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from sqa_kb.rag.hybrid_search import HybridChunk

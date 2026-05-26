@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from sqa_kb.domain.entities import Document
 from sqa_kb.domain.value_objects import CategoryCode, DocTypeCode

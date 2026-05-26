@@ -24,7 +24,7 @@ from sqa_kb.domain.entities import (
     DocumentDetail,
     MyCapturesStats,
 )
-from sqa_kb.domain.errors import NotFoundError, ForbiddenError
+from sqa_kb.domain.errors import ForbiddenError, NotFoundError
 from sqa_kb.domain.value_objects import CategoryCode, DocStatus, DocTypeCode
 
 

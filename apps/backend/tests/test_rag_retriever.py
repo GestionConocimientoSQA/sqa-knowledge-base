@@ -78,7 +78,7 @@ class _FakeResult:
     def __init__(self, rows: Sequence[Mapping[str, Any]]) -> None:
         self._rows = list(rows)
 
-    def mappings(self) -> "_FakeResult":
+    def mappings(self) -> _FakeResult:
         return self
 
     def all(self) -> list[Mapping[str, Any]]:
@@ -95,7 +95,7 @@ class _FakeSession:
         self._rows = rows
         self._captured = captured
 
-    async def __aenter__(self) -> "_FakeSession":
+    async def __aenter__(self) -> _FakeSession:
         return self
 
     async def __aexit__(self, *args: Any) -> None:
@@ -464,7 +464,9 @@ async def test_retrieved_chunk_is_immutable() -> None:
         document_category="TEC",
         authoritative=False,
     )
-    with pytest.raises(Exception):  # FrozenInstanceError de dataclass
+    from dataclasses import FrozenInstanceError
+
+    with pytest.raises(FrozenInstanceError):
         chunk.score = 1.0  # type: ignore[misc]
 
 

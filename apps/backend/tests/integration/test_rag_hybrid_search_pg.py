@@ -32,7 +32,6 @@ from sqa_kb.domain.entities import DocumentChunk
 from sqa_kb.ports.gateways import EmbeddingBatch
 from sqa_kb.rag.hybrid_search import HybridSearcher
 
-
 # ===========================================================================
 # Cleanup
 # ===========================================================================

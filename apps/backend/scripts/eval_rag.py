@@ -43,15 +43,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
 
 from sqlalchemy import text
 
 from sqa_kb.adapters.repositories.postgres import (
     create_engine,
     create_session_factory,
+    models,
 )
-from sqa_kb.adapters.repositories.postgres import models
 from sqa_kb.adapters.repositories.postgres.chunks import PostgresChunkRepository
 from sqa_kb.adapters.repositories.postgres.session import session_scope
 from sqa_kb.config import Settings, get_settings
@@ -357,7 +356,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--recall-threshold",
         type=float,
         default=DEFAULT_RECALL_THRESHOLD,
-        help=f"Umbral de recall@k para considerar el eval exitoso (default {DEFAULT_RECALL_THRESHOLD}).",
+        help=(
+            f"Umbral de recall@k para considerar el eval exitoso "
+            f"(default {DEFAULT_RECALL_THRESHOLD})."
+        ),
     )
     parser.add_argument(
         "--precision-threshold",

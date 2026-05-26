@@ -26,7 +26,6 @@ from sqa_kb.domain.value_objects import RoleId
 from sqa_kb.main import create_app
 from sqa_kb.rag.hybrid_search import HybridChunk
 
-
 # ===========================================================================
 # Fakes
 # ===========================================================================

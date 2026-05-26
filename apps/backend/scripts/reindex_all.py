@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 import sys
 
 from sqa_kb.adapters.embeddings.cohere import CohereEmbedder
