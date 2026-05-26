@@ -9,7 +9,7 @@ on:
       - "package.json"
       - ".github/workflows/frontend-ci.yml"
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - "apps/frontend/**"
       - "packages/**"
