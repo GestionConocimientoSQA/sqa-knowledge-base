@@ -16,6 +16,7 @@ on:
     branches: [master]
     paths:
       - "apps/frontend/**"
+  workflow_dispatch:
 
 defaults:
   run:
