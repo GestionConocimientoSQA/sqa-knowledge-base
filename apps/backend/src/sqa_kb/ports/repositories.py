@@ -41,6 +41,7 @@ from sqa_kb.domain.value_objects import (
     CategoryCode,
     DocStatus,
     DocTypeCode,
+    IngestionStatus,
     SessionMode,
     SessionStatus,
 )
@@ -201,6 +202,16 @@ class IngestionRepository(Protocol):
     async def list_pending(
         self, *, limit: int = 50, offset: int = 0
     ) -> Sequence[IngestionItem]: ...
+
+    async def list_by_status(
+        self,
+        statuses: Iterable[IngestionStatus] | None = None,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Sequence[IngestionItem]: ...
+    """Lista items filtrando por uno o más `status`. `None` = todos.
+    Ordenados por `uploaded_at` desc. Espejo del `GET /ingestion`."""
 
     async def update(self, item: IngestionItem) -> IngestionItem: ...
 

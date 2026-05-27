@@ -1,8 +1,13 @@
-"""Markdown generator — placeholder de Fase 2.4.
+"""Markdown generator del agente (Fase 2.4, refactor en Fase 4.1).
 
-Renderiza el documento final en Markdown usando el template
-`markdown_document.j2`. Fase 4 reemplaza este módulo con generadores
-multi-formato (DOCX, PPTX, PDF, XLSX) sin cambiar la interfaz pública.
+Construye el documento final del modo A. Desde Fase 4.1 delega la
+generación del Markdown al `MarkdownGenerator` canónico de
+`documents/generators/markdown.py` (DRY: una sola definición de la
+estructura del documento, compartida con los generadores DOCX/PDF/etc).
+
+Este módulo se mantiene como **adapter**: convierte el `AgentState` a
+un `DocumentContent` y envuelve el resultado en `GeneratedDocument`
+(el tipo que el nodo `generation` ya consume) para no romper Fase 2.
 
 Slug builder: `[TIPO]-[topic-slug]-[YYYY-MM-DD]` — espejo del agente
 actual y validado por el regex de `domain.entities.Slug`.
@@ -15,7 +20,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqa_kb.agent.state import AgentState
-from sqa_kb.agent.templates import render
+from sqa_kb.documents.generators.markdown import MarkdownGenerator
+from sqa_kb.documents.models import DocumentContent, QaPair
 
 # ===========================================================================
 # Slug
@@ -88,27 +94,33 @@ def render_markdown_document(
     document_id = build_document_id(
         document_type=document_type, topic=state.topic, fecha=fecha
     )
-    content = render(
-        "markdown_document.j2",
+    is_anonymized = bool(state.is_reusable_content)
+
+    document_content = DocumentContent(
+        document_id=document_id,
         title=title,
         category=category,
         document_type=document_type,
         version="1.0",
-        fecha=fecha.strftime("%Y-%m-%d"),
+        fecha=fecha,
         author_name=state.user_name,
         author_role=state.user_role,
         topic=state.topic,
-        free_capture_blocks=state.free_capture_blocks,
-        deep_dive_qa=state.deep_dive_qa,
-        is_anonymized=bool(state.is_reusable_content),
+        body_blocks=tuple(state.free_capture_blocks),
+        qa_pairs=tuple(
+            QaPair(question=q, answer=a) for q, a in state.deep_dive_qa.items()
+        ),
+        is_anonymized=is_anonymized,
     )
+    # Delegamos la estructura al generador canónico (DRY con DOCX/PDF/etc).
+    content = MarkdownGenerator().render(document_content)
     return GeneratedDocument(
         document_id=document_id,
         title=title,
         content=content,
         format="MD",
         fecha=fecha,
-        is_anonymized=bool(state.is_reusable_content),
+        is_anonymized=is_anonymized,
     )
 
 

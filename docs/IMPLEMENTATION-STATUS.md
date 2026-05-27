@@ -1,6 +1,6 @@
 # Estado de implementación · SQA Knowledge Base
 
-> **Última actualización:** 2026-05-25 (Fase 3 ✅ completada — 3.0 a 3.7 cerradas, branch listo para merge a master)
+> **Última actualización:** 2026-05-27 (Fase 4 ✅ completada — 4.0 a 4.6 cerradas, branch `fase-4-docs` listo para merge a master)
 > **Documento vivo** — se actualiza al cierre de cada fase.
 > Fuente de verdad para `qué está hecho / en curso / pendiente`.
 
@@ -9,13 +9,13 @@
 | Indicador | Valor |
 |---|---|
 | Timeline estimado total | 16-20 semanas |
-| Avance ponderado | **~78% del proyecto total** (≈15.5 de 20 semanas-equivalentes) |
-| Fases completadas | **10** (Fase 0, 1A, 1B-local, 2, 3, 5, 6, 7, 10A, 10B) |
-| Fase actual | **Fase 3 ✅ Completada** — 3.0 a 3.7 cerradas. Branch `fase-3-rag-vectorial` listo para merge a `master`. |
-| Próxima fase | **Fase 4** — Backend · Generación y extracción de docs (DOCX/PPTX/PDF/XLSX) |
+| Avance ponderado | **~83% del proyecto total** (≈16.5 de 20 semanas-equivalentes) |
+| Fases completadas | **11** (Fase 0, 1A, 1B-local, 2, 3, 4, 5, 6, 7, 10A, 10B) |
+| Fase actual | **Fase 4 ✅ Completada** — 4.0 a 4.6 cerradas. Branch `fase-4-docs` listo para merge a `master`. |
+| Próxima fase | **Fase 8** — Frontend · Cola de ingesta (consume `/ingestion` de Fase 4), o **Fase 9** Admin |
 | Bloqueo externo | Fase 1B-azure (Entra ID real) sigue esperando App Registration por TI |
-| Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI + PostgreSQL + agente LangGraph + RAG vectorial pgvector ✓ · Infra Bicep esqueleto ✓ |
-| Tests totales | 648 backend + 220 frontend = **868 tests verdes** |
+| Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI + PostgreSQL + agente LangGraph + RAG vectorial pgvector + generación/extracción docs ✓ · Infra Bicep esqueleto ✓ |
+| Tests totales | 774 backend + 220 frontend = **994 tests verdes** |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
 
 ## Tabla de fases
@@ -26,7 +26,7 @@
 | **1** | **Backend · Persistencia + Auth (1A + 1B-local)** | **2-3** | **✅ Completada (excepto 1B-azure)** | Clean Architecture + PG real + dev auth + endpoints CRUD + frontend conectado. 1B-azure (Entra ID real) bloqueado por TI. |
 | **2** | **Backend · Agente LangGraph (ETAPAS)** | **4-6** | **✅ Completada** | Adapter LLM + AgentState + checkpointer + grafo + 3 modos + endpoint SSE con 14 eventos. 420 tests. |
 | **3** | **Backend · RAG vectorial** | **7-8** | **✅ Completada** | 3.0 adapter Cohere + 3.1 chunker + 3.2 indexer + 3.3 retriever HNSW + 3.4 hybrid search + 3.5 endpoint /queries + 3.6 reindex_all + hooks generation/ingestion + 3.7 eval set (recall@5=1.0, precision@1=1.0). 648 tests. |
-| 4 | Backend · Generación y extracción de docs | 9-10 | ⬜ Pendiente | 0% |
+| **4** | **Backend · Generación y extracción de docs** | **9-10** | **✅ Completada** | 4.0 branding + 4.1 DocxGenerator/MarkdownGenerator + 4.2 Pptx/Xlsx/Pdf + 4.3 extractores+dispatcher + 4.4 anonimizador + 4.5 endpoints /ingestion + 4.6 adapter Blob+worker. 774 tests. |
 | **5** | **Frontend · Fundación (UI + auth stub)** | **11-12** | **✅ Completada** | **100%** |
 | **6** | **Frontend · Chat streaming SSE (con mock-transport)** | **13-14** | **✅ Completada** | **100%** |
 | **7** | **Frontend · Explorer + Dashboard interactivo** | **15** | **✅ Completada** | **100%** |
@@ -562,43 +562,89 @@ Nota: 1.0 en ambas métricas refleja que el pipeline (chunker → HybridSearcher
 
 # Fase 4 · Backend · Generación y extracción de documentos
 
-**Estado:** ⬜ Pendiente · **Semanas roadmap:** 9-10
+**Estado:** ✅ Completada (4.0 → 4.6) · **Semanas roadmap:** 9-10 · **Branch:** `fase-4-docs`
 
-## Objetivo
+## Resumen ejecutivo
 
-Capacidad completa de generar y extraer todos los formatos soportados (11 tipos de documento × 6 formatos).
+Pipeline completo de generación (5 formatos) + extracción (4 formatos) + anonimización + ingesta (modo C end-to-end). Paquete `documents/` desacoplado de `agent/` y `api/`. **774 backend tests verdes** (648 → 774, +126). Sin requests reales a Cohere/Anthropic en tests (fakes).
 
-## Tareas planificadas
+## Sub-fases (todas cerradas)
 
-- ⬜ Generadores con branding SQA aplicado:
-  - `DocxGenerator` (python-docx) — POL, PROC, INST, MTEC, etc.
-  - `PptxGenerator` (python-pptx) — PRES
-  - `XlsxGenerator` (openpyxl) — FORM
-  - `PdfGenerator` (reportlab + conversión desde docx)
-  - `MarkdownGenerator`
-- ⬜ Plantillas base `.docx`/`.pptx` con placeholders y branding SQA (logos, colores, fuentes Exo 2 / Montserrat)
-- ⬜ Extractores:
-  - `DocxExtractor` (python-docx)
-  - `PptxExtractor` (python-pptx)
-  - `PdfExtractor` (pdfplumber)
-  - `XlsxExtractor` (openpyxl)
-- ⬜ Dispatcher que elige extractor por extensión
-- ⬜ Anonimizador con reglas configurables (regex + LLM-fallback)
-- ⬜ Filename builder (`[TIPO]-[tema]-[YYYY-MM-DD].ext`)
-- ⬜ Endpoints de ingesta:
-  - `POST /ingestion` (upload de archivo a Blob)
-  - `POST /ingestion/{id}/classify` (extrae + clasifica)
-  - `POST /ingestion/{id}/approve` (con metadata de trazabilidad)
-  - `GET /ingestion` (lista filtrable por status)
-- ⬜ Worker `ingestion_processor`
-- ⬜ Tests con archivos de prueba reales para cada formato
+### ✅ 4.0 — Branding SQA + helper de estilos
 
-## Definition of Done
+- `documents/branding.py`: paleta SQA en **hex derivada de las HSL del frontend** (`globals.css`) — single source of truth visual. `RgbColor` frozen con `rgb_tuple`/`with_hash`. Roles semánticos (`COLOR_TITULO`/`ACENTO`/`CUERPO`) que aliasan colores. Tipografía (Exo 2 / Montserrat / JetBrains Mono) + escala tipográfica. `category_color()` espejo de `--color-cat-*`.
+- Deps: python-docx, python-pptx, openpyxl, reportlab, pdfplumber, azure-storage-blob, python-multipart.
+- **15 tests**.
 
-- Generación de los 11 tipos produce archivos válidos abriendo en MS Office
-- Extracción de los 6 formatos soportados produce texto + estructura
-- Anonimización detecta y reemplaza patrones conocidos
-- Branding SQA aplicado consistentemente en PPTX y DOCX
+### ✅ 4.1 — DocxGenerator + MarkdownGenerator canónico
+
+- `documents/models.py`: `DocumentContent` (DTO común de todos los generadores, frozen) + `QaPair`, desacoplado del `AgentState`.
+- `documents/doc_types.py`: `DOC_TYPE_LABELS` + `CATEGORY_LABELS`.
+- `generators/base.py`: `DocumentGenerator` Protocol + `GeneratedFile` (filename + media_type + bytes).
+- `generators/markdown.py`: `MarkdownGenerator` **canónico** (estructura común: título → metadata → Tema → Contenido → Precisiones).
+- `generators/docx.py`: `DocxGenerator` con branding (título azul corp + barra naranja, tabla metadata header azul, footer SQA).
+- **Refactor DRY**: `agent/markdown_generator.py` delega al `MarkdownGenerator` canónico; borrado el template `markdown_document.j2` huérfano. Fase 2 intacta.
+- **Decisión**: la estructura de secciones por tipo (POL/PROC/...) vive en el "Playbook SQA v1.3" externo (no en el repo). Los generadores producen la estructura común; `doc_types.py` documenta cómo extender por tipo cuando llegue el playbook.
+- **19 tests** (docx re-abierto válido con python-docx, branding, refactor).
+
+### ✅ 4.2 — PptxGenerator + XlsxGenerator + PdfGenerator
+
+- `pptx.py` (PRES): portada con barra naranja + slides por bloque/QA + footer.
+- `xlsx.py` (FORM): hojas Metadata/Contenido/Precisiones, header azul, freeze panes.
+- `pdf.py`: **reportlab desde cero** (sin LibreOffice) — título + tabla metadata + secciones + footer con n° de página. Escapa `< > &` del input.
+- **16 tests** (cada formato re-abierto con su lib).
+
+### ✅ 4.3 — Extractores + dispatcher por extensión
+
+- `extractors/base.py`: `DocumentExtractor` Protocol + `ExtractedDocument` (texto + secciones + page_count). Desacoplado de `rag.chunker.Section`.
+- DocxExtractor / PptxExtractor (1 sección/slide) / PdfExtractor (1 sección/página) / XlsxExtractor (1 sección/hoja, read_only).
+- `ExtractorDispatcher`: elige por extensión (case-insensitive), `UnsupportedFormatError`.
+- **22 tests roundtrip** (genero con 4.1/4.2 → extraigo → verifico texto).
+
+### ✅ 4.4 — Anonimizador regex + interfaz Presidio futuro
+
+- `anonymizer.py`: `RegexAnonymizer` implementa el puerto `PiiFilter`. 6 reglas (url_credentials, email, tarjeta, IP, teléfono, NIT) con orden cuidado. `detect()` para auditoría sin reemplazar. `NoopAnonymizer`. Interfaz lista para swap a Presidio (alineación TI §2.4).
+- **20 tests** (detección, no falsos positivos en contenido técnico, reglas custom inyectables).
+
+### ✅ 4.5 — Endpoints `/ingestion` + IngestionService + filename_builder
+
+- `documents/filename.py`: `build_filename([TIPO]-[tema]-[YYYY-MM-DD].ext)`.
+- `services/ingestion_service.py`: `IngestionService` orquesta el flujo modo C (SOLID, deps por constructor). `classifier` e `indexer_hook` como callables inyectables. Anonimiza antes de clasificar/indexar.
+- `api/ingestion.py`: router fino — POST upload (multipart), POST classify, POST approve (trazabilidad), GET list (filtrable por status). Auth + camelCase.
+- Port + adapter: `list_by_status` agregado.
+- **30 tests** (service 13 + router 11 + filename 6).
+
+### ✅ 4.6 — Adapter Blob Azurite + worker `ingestion_processor`
+
+- `adapters/blob/azure.py`: `AzureBlobStorage` (puerto `BlobStorage`). Azurite vía connection string en local, Managed Identity (account_url + DefaultAzureCredential) en prod. upload/download/delete/signed_url (SAS; MI → NotImplementedError documentado).
+- Worker `process_ingestion_background`: auto-clasifica en background tras el upload (swallow + log). El `POST /ingestion` lo agenda como `BackgroundTasks`.
+- `main.py _wire_ingestion`: arma blob + anonymizer + IngestionService. `classifier` wrap de `classify_topic` (fallback determinista sin gateway), `indexer_hook` wrap de `index_document_background`.
+- `backend-ci.yml`: service `azurite` para validar el blob en CI.
+- **8 tests** (worker 2 + blob integration 6, auto-skip sin Azurite).
+
+## Definition of Done — cumplida
+
+- ✅ Generación de los formatos produce archivos válidos (re-abiertos con su lib en tests; abren en MS Office).
+- ✅ Extracción de DOCX/PPTX/PDF/XLSX produce texto + estructura (roundtrip verde).
+- ✅ Anonimización detecta y reemplaza patrones conocidos (regex; Presidio diferido a alineación TI).
+- ✅ Branding SQA aplicado consistentemente en los 5 formatos (single source desde `branding.py`).
+- ✅ Endpoints `/ingestion` end-to-end (upload → classify → approve → list).
+- ✅ Worker `ingestion_processor` (BackgroundTask auto-classify).
+
+## Decisiones cerradas en Fase 4
+
+- **Generadores programáticos sin plantillas binarias** — el branding vive en código (`branding.py`), sin assets `.docx`/`.pptx` en el repo.
+- **PDF con reportlab desde cero** (no DOCX→PDF) — sin dependencia de LibreOffice/Gotenberg. Si TI prefiere conversión idéntica, otro adapter con el mismo Port.
+- **Anonimizador regex** con interfaz `PiiFilter` lista para Presidio (alineación TI).
+- **Worker = BackgroundTask + status field** (no arq/Redis) — el flujo manual classify/approve sigue disponible; arq queda para Fase 10/11 si el throughput lo exige.
+- **Estructura común de documento** (no por-tipo) hasta tener el Playbook v1.3.
+
+## Pendientes diferidos
+
+- ⬜ **Estructura específica por tipo de documento** (POL/PROC/...) — requiere el Playbook SQA v1.3. `doc_types.py` documenta el punto de extensión.
+- ⬜ **Smoke E2E del flujo de ingesta con Anthropic real** — la auto-clasificación usa `classify_topic`; el smoke con LLM real queda para cuando se confirme go-live (regla del usuario).
+- ⬜ **Embedding de fuentes en DOCX/PPTX** — hoy se referencian por nombre; el font-embedding es hardening de Fase 10.
+- ⬜ **user-delegation SAS** para `signed_url` con Managed Identity (Fase 11).
 
 ---
 

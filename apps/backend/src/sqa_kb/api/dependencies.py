@@ -127,3 +127,11 @@ SseBufferDep = Annotated[SseEventBuffer, Depends(get_sse_buffer)]
 from sqa_kb.rag.hybrid_search import HybridSearcher  # noqa: E402
 
 KbSearcherDep = Annotated[HybridSearcher, Depends(get_kb_searcher)]
+
+# IngestionService para `/ingestion` (Fase 4.5). Se cablea en main.py
+# (`_wire_ingestion`) cuando hay blob storage + gateway disponibles.
+get_ingestion_service = _from_state("ingestion_service")
+
+from sqa_kb.services.ingestion_service import IngestionService  # noqa: E402
+
+IngestionServiceDep = Annotated[IngestionService, Depends(get_ingestion_service)]

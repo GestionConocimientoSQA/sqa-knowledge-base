@@ -24,6 +24,14 @@ dependencies = [
     "cohere>=5.13.0",
     "langchain-text-splitters>=0.3.4",
     "tiktoken>=0.8.0",
+    # Fase 4 — generación + extracción de documentos
+    "python-docx>=1.1.2",
+    "python-pptx>=1.0.2",
+    "openpyxl>=3.1.5",
+    "reportlab>=4.2.5",
+    "pdfplumber>=0.11.4",
+    "azure-storage-blob>=12.24.0",
+    "python-multipart>=0.0.18",
 ]
 
 [project.optional-dependencies]

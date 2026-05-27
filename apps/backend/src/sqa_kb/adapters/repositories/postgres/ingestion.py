@@ -47,6 +47,27 @@ class PostgresIngestionRepository:
             )
             return [mappers.to_ingestion_entity(m) for m in result.scalars().all()]
 
+    async def list_by_status(
+        self,
+        statuses=None,  # type: ignore[no-untyped-def]
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Sequence[IngestionItem]:
+        async with self._session_factory() as db:
+            stmt = select(models.IngestionItemModel)
+            if statuses:
+                stmt = stmt.where(
+                    models.IngestionItemModel.status.in_([str(s) for s in statuses])
+                )
+            stmt = (
+                stmt.order_by(models.IngestionItemModel.uploaded_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            result = await db.execute(stmt)
+            return [mappers.to_ingestion_entity(m) for m in result.scalars().all()]
+
     async def update(self, item: IngestionItem) -> IngestionItem:
         async with session_scope(self._session_factory) as db:
             model = await db.get(models.IngestionItemModel, item.id)
