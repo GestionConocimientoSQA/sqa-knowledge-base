@@ -27,6 +27,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from sqa_kb.adapters.auth.dev import DevTokenValidator
+from sqa_kb.adapters.blob import AzureBlobStorage
 from sqa_kb.adapters.checkpointer import CheckpointerBundle, build_checkpointer
 from sqa_kb.adapters.embeddings.cohere import CohereEmbedder
 from sqa_kb.adapters.llm import AnthropicDirectGateway
@@ -65,17 +66,20 @@ from sqa_kb.api.dashboard import router as dashboard_router
 from sqa_kb.api.documents import router as documents_router
 from sqa_kb.api.health import register_health_check
 from sqa_kb.api.health import router as health_router
+from sqa_kb.api.ingestion import router as ingestion_router
 from sqa_kb.api.messages import router as messages_router
 from sqa_kb.api.queries import router as queries_router
 from sqa_kb.api.sessions import router as sessions_router
 from sqa_kb.api.sse import SseEventBuffer
 from sqa_kb.api.taxonomy import router as taxonomy_router
 from sqa_kb.config import LlmGatewayKind, Settings, get_settings
+from sqa_kb.documents.anonymizer import RegexAnonymizer
 from sqa_kb.middleware.error_handler import register_error_handlers
 from sqa_kb.middleware.request_id import RequestIdMiddleware
 from sqa_kb.observability.logging import configure_logging, get_logger
 from sqa_kb.rag.hybrid_search import HybridSearcher
 from sqa_kb.rag.indexer import Indexer
+from sqa_kb.services.ingestion_service import IngestionService
 
 
 def _wire_persistence(app: FastAPI, settings: Settings) -> None:
@@ -201,13 +205,119 @@ async def _wire_agent(app: FastAPI, settings: Settings) -> CheckpointerBundle | 
     return bundle
 
 
+def _wire_ingestion(app: FastAPI, settings: Settings) -> None:
+    """Inicializa el `IngestionService` (Fase 4.6) en `app.state`.
+
+    Requiere Blob (Azurite local vía connection string o Managed Identity
+    vía account_url). Si no hay ninguno, saltea el wiring y `/ingestion`
+    devuelve 500 con mensaje claro vía `_from_state`.
+
+    - `classifier`: si hay LLM gateway, envuelve `classify_topic`; si no,
+      usa un fallback determinista (CONT/GUIA confidence 0) para que el
+      flujo no se rompa sin Anthropic.
+    - `indexer_hook`: si hay indexer (Cohere cableado), envuelve
+      `index_document_background`; si no, None (no indexa al aprobar).
+    """
+    if getattr(app.state, "document_repo", None) is None:
+        return
+
+    conn = (
+        settings.azure_storage_connection_string.get_secret_value()
+        if settings.azure_storage_connection_string is not None
+        else None
+    )
+    account_url = (
+        str(settings.azure_blob_account_url)
+        if settings.azure_blob_account_url is not None
+        else None
+    )
+    if not conn and not account_url:
+        return
+
+    blob = AzureBlobStorage(connection_string=conn, account_url=account_url)
+    anonymizer = RegexAnonymizer()
+
+    gateway = getattr(app.state, "llm_gateway", None)
+    classifier = _build_classifier(gateway)
+    indexer = getattr(app.state, "indexer", None)
+    indexer_hook = _build_indexer_hook(indexer)
+
+    app.state.blob_storage = blob
+    app.state.ingestion_service = IngestionService(
+        ingestion_repo=app.state.ingestion_repo,
+        document_repo=app.state.document_repo,
+        blob=blob,
+        anonymizer=anonymizer,
+        classifier=classifier,
+        indexer_hook=indexer_hook,
+    )
+
+
+def _build_classifier(gateway):  # type: ignore[no-untyped-def]
+    """Devuelve un `ClassifierFn` que clasifica texto → sugerencia.
+
+    Con gateway: envuelve `classify_topic` del agente. Sin gateway:
+    fallback determinista para no romper la ingesta sin Anthropic.
+    """
+    from sqa_kb.services.ingestion_service import ClassificationSuggestion
+
+    if gateway is None:
+        async def _fallback(text: str):  # type: ignore[no-untyped-def] # noqa: ARG001
+            from sqa_kb.domain.value_objects import CategoryCode, DocTypeCode
+
+            return ClassificationSuggestion(
+                category=CategoryCode.CONT,
+                document_type=DocTypeCode.GUIA,
+                confidence=0.0,
+                reasoning="Sin LLM gateway — clasificación manual requerida.",
+            )
+
+        return _fallback
+
+    async def _classify(text: str):  # type: ignore[no-untyped-def]
+        from sqa_kb.agent.tools import classify_topic
+        from sqa_kb.domain.value_objects import CategoryCode, DocTypeCode
+
+        # `classify_topic` espera un "topic" — le pasamos un prefijo del
+        # texto extraído (los primeros ~1000 chars alcanzan para clasificar).
+        classification = await classify_topic(gateway, topic=text[:1000])
+        return ClassificationSuggestion(
+            category=CategoryCode(str(classification.category)),
+            document_type=DocTypeCode(str(classification.document_type)),
+            confidence=classification.confidence,
+            reasoning=classification.reasoning,
+        )
+
+    return _classify
+
+
+def _build_indexer_hook(indexer):  # type: ignore[no-untyped-def]
+    """Devuelve un `IndexerHook` que indexa el doc aprobado, o None."""
+    if indexer is None:
+        return None
+
+    async def _hook(document_id: str, text: str) -> None:
+        from sqa_kb.rag.chunker import Section
+        from sqa_kb.rag.indexer import index_document_background
+
+        await index_document_background(
+            indexer,
+            document_id,
+            sections=[Section(title="", content=text)],
+        )
+
+    return _hook
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Lifespan que cablea search + agente y libera recursos al apagar."""
+    """Lifespan que cablea search + agente + ingesta y libera recursos."""
     settings = get_settings()
     # Search debe armarse ANTES del agente — el grafo lo necesita.
     _wire_search(app, settings)
     bundle = await _wire_agent(app, settings)
+    # Ingesta requiere document_repo + (opcional) gateway/indexer ya armados.
+    _wire_ingestion(app, settings)
     try:
         yield
     finally:
@@ -259,6 +369,7 @@ def create_app() -> FastAPI:
     app.include_router(messages_router)
     app.include_router(dashboard_router)
     app.include_router(queries_router)
+    app.include_router(ingestion_router)
 
     @app.get("/", tags=["root"])
     async def root() -> dict[str, str]:
