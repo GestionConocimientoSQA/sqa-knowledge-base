@@ -42,6 +42,7 @@ class _FakeService:
     last_upload: dict | None = None  # type: ignore[type-arg]
     last_classify_id: str = ""
     last_approve: dict | None = None  # type: ignore[type-arg]
+    last_reject: dict | None = None  # type: ignore[type-arg]
     list_filter: object = None
     items_to_return: list[IngestionItem] = field(default_factory=list)
 
@@ -71,6 +72,10 @@ class _FakeService:
             "approver_name": approver_name,
         }
         return _item(item_id, status=IngestionStatus.INDEXADO)
+
+    async def reject(self, item_id: str, *, reason: str) -> IngestionItem:
+        self.last_reject = {"item_id": item_id, "reason": reason}
+        return _item(item_id, status=IngestionStatus.RECHAZADO)
 
     async def list_items(  # type: ignore[no-untyped-def] # noqa: ARG002
         self, *, statuses=None, limit: int = 50, offset: int = 0
@@ -238,4 +243,26 @@ def test_list_invalid_status_returns_422(client_and_service) -> None:  # type: i
 def test_list_limit_out_of_range_returns_422(client_and_service) -> None:  # type: ignore[no-untyped-def]
     client, _ = client_and_service
     resp = client.get("/ingestion?limit=500")
+    assert resp.status_code == 422
+
+
+# ===========================================================================
+# POST /ingestion/{id}/reject
+# ===========================================================================
+
+
+def test_reject_with_reason(client_and_service) -> None:  # type: ignore[no-untyped-def]
+    client, svc = client_and_service
+    resp = client.post(
+        "/ingestion/ing-xyz/reject", json={"reason": "No cumple el estándar"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "rechazado"
+    assert svc.last_reject["item_id"] == "ing-xyz"
+    assert svc.last_reject["reason"] == "No cumple el estándar"
+
+
+def test_reject_missing_reason_returns_422(client_and_service) -> None:  # type: ignore[no-untyped-def]
+    client, _ = client_and_service
+    resp = client.post("/ingestion/ing-xyz/reject", json={})
     assert resp.status_code == 422

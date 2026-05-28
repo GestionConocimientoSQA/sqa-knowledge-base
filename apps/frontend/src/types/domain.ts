@@ -242,18 +242,43 @@ export interface CaptureScore {
   unicidad: number;
 }
 
-// === Ingesta pendiente ===
+// === Ingesta (modo C) — alineado al wire del backend Fase 4 (camelCase) ===
+
+/** Estados del item de ingesta. Espejo del `IngestionStatus` del backend. */
+export type IngestionStatus =
+  | "pendiente-metadata"
+  | "listo"
+  | "en-revision"
+  | "aprobado"
+  | "rechazado"
+  | "indexado";
+
 export interface IngestionItem {
   id: string;
   filename: string;
-  size: string;
+  sizeBytes: number;
   paginas: number;
-  sugerido: { carpeta: CategoryCode; tipo: DocTypeCode };
-  aprobador: string;
-  fechaAprobacion: string;
+  carpetaSugerida: CategoryCode | null;
+  tipoSugerido: DocTypeCode | null;
+  aprobadorOid: string | null;
+  aprobadorName: string;
+  fechaAprobacion: string | null;
   fuenteOriginal: string;
   version: string;
-  estado: "pendiente-metadata" | "listo" | "duplicado";
-  duplicadoDe?: string;
+  status: IngestionStatus;
+  uploadedByOid: string;
+  uploadedAt: string;
+  blobPath: string | null;
+  errorDetail: string | null;
+}
+
+/** Metadata de trazabilidad para aprobar un item (POST approve). */
+export interface TraceabilityInput {
+  approvedBy: string;
+  approvalDate: string;
+  sourceOrigin: string;
+  version: string;
+  category: CategoryCode;
+  documentType: DocTypeCode;
 }
 

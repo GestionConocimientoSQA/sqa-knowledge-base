@@ -51,6 +51,12 @@ class ApproveBody(_CamelBase):
     document_type: DocTypeCode
 
 
+class RejectBody(_CamelBase):
+    """Body del POST /ingestion/{id}/reject — motivo del rechazo."""
+
+    reason: str = Field(min_length=1, max_length=1024)
+
+
 # ===========================================================================
 # Endpoints
 # ===========================================================================
@@ -113,6 +119,17 @@ async def approve_document(
         approver_oid=user.oid,
         approver_name=user.name,
     )
+
+
+@router.post("/{item_id}/reject", response_model=IngestionItem)
+async def reject_document(
+    item_id: str,
+    body: RejectBody,
+    service: IngestionServiceDep,
+    user: CurrentUser,  # noqa: ARG001 — auth gate
+) -> IngestionItem:
+    """Rechaza el item con un motivo (decisión del revisor)."""
+    return await service.reject(item_id, reason=body.reason)
 
 
 @router.get("", response_model=list[IngestionItem])

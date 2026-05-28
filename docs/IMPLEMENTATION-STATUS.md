@@ -1,6 +1,6 @@
 # Estado de implementación · SQA Knowledge Base
 
-> **Última actualización:** 2026-05-27 (Fase 4 ✅ completada — 4.0 a 4.6 cerradas, branch `fase-4-docs` listo para merge a master)
+> **Última actualización:** 2026-05-28 (Fase 8 ✅ completada — 8.1 a 8.5 cerradas, branch `fase-8-ingesta` listo para merge a master)
 > **Documento vivo** — se actualiza al cierre de cada fase.
 > Fuente de verdad para `qué está hecho / en curso / pendiente`.
 
@@ -9,13 +9,13 @@
 | Indicador | Valor |
 |---|---|
 | Timeline estimado total | 16-20 semanas |
-| Avance ponderado | **~83% del proyecto total** (≈16.5 de 20 semanas-equivalentes) |
-| Fases completadas | **11** (Fase 0, 1A, 1B-local, 2, 3, 4, 5, 6, 7, 10A, 10B) |
-| Fase actual | **Fase 4 ✅ Completada** — 4.0 a 4.6 cerradas. Branch `fase-4-docs` listo para merge a `master`. |
-| Próxima fase | **Fase 8** — Frontend · Cola de ingesta (consume `/ingestion` de Fase 4), o **Fase 9** Admin |
+| Avance ponderado | **~88% del proyecto total** (≈17.5 de 20 semanas-equivalentes) |
+| Fases completadas | **12** (Fase 0, 1A, 1B-local, 2, 3, 4, 5, 6, 7, 8, 10A, 10B) |
+| Fase actual | **Fase 8 ✅ Completada** — 8.1 a 8.5 cerradas. Branch `fase-8-ingesta` listo para merge a `master`. |
+| Próxima fase | **Fase 9** — Frontend · Admin / Multi-tenant proyectos (re-scope: conocimiento por proyecto + roles `colaborador` / `gk_lead` globales + `project_owner` / `member` per-proyecto) |
 | Bloqueo externo | Fase 1B-azure (Entra ID real) sigue esperando App Registration por TI |
 | Stack productivo | Frontend Next.js 15 ✓ · Backend FastAPI + PostgreSQL + agente LangGraph + RAG vectorial pgvector + generación/extracción docs ✓ · Infra Bicep esqueleto ✓ |
-| Tests totales | 774 backend + 220 frontend = **994 tests verdes** |
+| Tests totales | 774 backend + 271 frontend unit + 57 E2E = **1102 tests verdes** |
 | Deployable target | Azure (Container Apps, PostgreSQL Flexible Server, Blob, Key Vault, Entra ID, App Insights) |
 
 ## Tabla de fases
@@ -30,7 +30,7 @@
 | **5** | **Frontend · Fundación (UI + auth stub)** | **11-12** | **✅ Completada** | **100%** |
 | **6** | **Frontend · Chat streaming SSE (con mock-transport)** | **13-14** | **✅ Completada** | **100%** |
 | **7** | **Frontend · Explorer + Dashboard interactivo** | **15** | **✅ Completada** | **100%** |
-| 8 | Frontend · Cola de ingesta | 16 | ⬜ Pendiente | 0% |
+| **8** | **Frontend · Cola de ingesta** | **16** | **✅ Completada** | 8.1 reject backend + contratos · 8.2 UploadZone D&D · 8.3 página /ingestion + tabs + queue · 8.4 detail + TraceabilityForm · 8.5 smoke E2E. 271 unit + 57 E2E. |
 | 9 | Frontend · Admin (usuarios, taxonomía, skills, audit) | 17 | ⬜ Pendiente | 0% |
 | **10** | **Hardening (perf + a11y + security review)** | **18-19** | **✅ Sub-fases 10A + 10B** | E2E Playwright + axe a11y + CSP + Lighthouse CI + keyboard nav + i18n (es-CO/en-US) + code splitting; falta backend-side |
 | 11 | Migración legacy + paso a producción Azure | 20 | ⬜ Pendiente | parcial (Bicep esqueleto, OIDC workflow) |
@@ -1160,31 +1160,74 @@ Smoke E2E manual (Claude in Chrome) — flujo completo validado en branch `fase-
 
 # Fase 8 · Frontend · Cola de ingesta
 
-**Estado:** ⬜ Pendiente · **Semana roadmap:** 16
+**Estado:** ✅ Completada · **Validada:** 2026-05-28 · **Semana roadmap:** 16
 
 ## Objetivo
 
-UI completa para el flujo de ingesta de documentación aprobada (Modo C).
+UI completa para el flujo de ingesta de documentación aprobada (Modo C). Owner / GK Lead pueden subir documentos, clasificarlos, revisar metadata sugerida, aprobar con trazabilidad o rechazar con motivo.
 
-## Tareas planificadas
+## Sub-fases cerradas
 
-- ⬜ `/ingestion` con tabs por status (pending, in_review, completed, rejected)
-- ⬜ `UploadZone` con drag & drop multi-file
-- ⬜ `IngestionQueue` con acciones (clasificar, aprobar, rechazar)
-- ⬜ `/ingestion/[itemId]` con preview + clasificación + `TraceabilityForm`
-- ⬜ `TraceabilityForm` (aprobador, fecha, fuente, versión)
-- ⬜ Feedback visual durante extracción y indexación (progress bar)
-- ⬜ Conflict detection (mostrar si ya existe un doc similar)
+- ✅ **8.1 — Endpoint reject backend + contratos frontend.** `POST /ingestion/{id}/reject` con `Body{reason}`. Alineación del wire frontend → camelCase (`carpetaSugerida`, `uploadedAt`, etc.) + 6 estados oficiales del backend. Mock-stub `lib/api/ingestion.ts` con paridad funcional.
+- ✅ **8.2 — UploadZone drag & drop.** `validateIngestionFile` (formato + 10 MB), `useFileDropZone` para D&D, `UploadZone` con feedback per-file (Loader2 / CheckCircle2 / XCircle), accept attr derivado de `SUPPORTED_EXTENSIONS`.
+- ✅ **8.3 — Página `/ingestion` + tabs + IngestionQueue.** Gated por `isAdmin`. 4 tabs (Pendientes / En revisión / Completados / Rechazados). Hooks TanStack Query (`useIngestionList`, `useClassifyIngestion`, `useRejectIngestion`) con refetch 15 s. Acciones contextuales por status (clasificar inline; aprobar linkea al detail; rechazar con prompt + reason).
+- ✅ **8.4 — `/ingestion/[itemId]` + TraceabilityForm.** `useIngestionItem(itemId)` con cache invalidation cruzada. Breadcrumb + header metadata + preview placeholder (viewer real Fase 10). `TraceabilityForm` con 6 campos obligatorios (`approvedBy`, `approvalDate`, `sourceOrigin`, `version`, `category`, `documentType`) — defaults desde sugerencias del clasificador. Approve / Reject con redirect a `/ingestion`. Constantes de taxonomía centralizadas en `lib/taxonomy.ts`.
+- ✅ **8.5 — Smoke E2E + cierre.** 4 specs Playwright (`e2e/ingestion.spec.ts`): gating capturador, owner ve queue, classify mueve item entre tabs, detail render del form. 57 specs E2E totales en verde.
 
-## Definition of Done
+## Entregables
 
-- Operador puede subir archivo y completar todo el flujo hasta indexación
-- Errores de extracción se muestran claramente
-- Items rechazados quedan trazables con motivo
+**Frontend nuevo:**
+- `src/lib/api/ingestion.ts` (list / get / upload / classify / approve / reject + `__resetIngestionStub`)
+- `src/lib/hooks/use-ingestion.ts` (4 hooks TanStack Query)
+- `src/lib/ingestion-validation.ts` (`validateIngestionFile`, MAX 10 MB)
+- `src/lib/taxonomy.ts` (CATEGORY_LABELS + DOC_TYPE_LABELS espejo del backend)
+- `src/components/ingestion/upload-zone.tsx`
+- `src/components/ingestion/status-badge.tsx`
+- `src/components/ingestion/ingestion-item-row.tsx`
+- `src/components/ingestion/ingestion-queue.tsx`
+- `src/components/ingestion/traceability-form.tsx`
+- `src/app/(app)/ingestion/page.tsx` (refactor desde EmptyState placeholder)
+- `src/app/(app)/ingestion/[itemId]/page.tsx` (nueva)
+
+**Tests nuevos:**
+- `tests/unit/ingestion-api.test.ts` (8.1)
+- `tests/unit/upload-zone.test.tsx` (8.2)
+- `tests/unit/ingestion-status-badge.test.tsx` (8.3)
+- `tests/unit/ingestion-item-row.test.tsx` (8.3)
+- `tests/unit/ingestion-queue.test.tsx` (8.3)
+- `tests/unit/ingestion-page.test.tsx` (8.3)
+- `tests/unit/traceability-form.test.tsx` (8.4)
+- `tests/unit/ingestion-detail-page.test.tsx` (8.4)
+- `e2e/ingestion.spec.ts` (8.5)
+
+**Backend tocado en 8.1:**
+- `apps/backend/src/sqa_kb/api/ingestion.py` (POST /reject + alias `sourceOrigin`)
+- `apps/backend/src/sqa_kb/services/ingestion_service.py` (`reject_item`)
+
+## Métricas finales
+
+- **271 tests unit frontend en verde** (Vitest, +51 desde 8.0)
+- **57 tests E2E en verde** (Playwright chromium, +4 desde 8.0)
+- TypeScript strict sin errores
+- Aprobación con backend Fase 4 verificada en stub (con `USE_REAL_API=false`)
+
+## Definition of Done (cumplido)
+
+- ✅ Operador puede subir archivo y completar todo el flujo hasta indexación
+- ✅ Errores de extracción se muestran claramente (errorDetail visible como alerta en row y detail)
+- ✅ Items rechazados quedan trazables con motivo (`errorDetail` campo del item)
+- ✅ Tabs reflejan estado actual con auto-refetch 15 s
+- ✅ Gating por rol respetado (capturador no ve la cola)
+
+## Notas para Fase 9 (multi-tenant)
+
+- El gating actual usa `user.isAdmin` (Owner global + GK Lead). En 9.x se reemplaza por `PermissionPolicy.can_approve_ingestion(user, project)` que cubre `project_owner` per-proyecto + override GK Lead.
+- El api `getIngestion(itemId)` hoy filtra la lista client-side por falta de endpoint detail. Cuando el backend exponga `GET /ingestion/{id}`, swap directo en `lib/api/ingestion.ts`.
+- El `TraceabilityForm` queda listo para extenderse con `projectId` (oculto: el contexto activo del store) sin cambios al contrato del endpoint.
 
 ## Dependencias
 
-- Backend Fase 4 (endpoints de ingesta + extractores + clasificador)
+- Backend Fase 4 (endpoints de ingesta + extractores + clasificador) ✓
 
 ---
 

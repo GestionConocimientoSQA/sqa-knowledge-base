@@ -266,6 +266,17 @@ class IngestionService:
         )
         return await self._ingestion_repo.update(updated)
 
+    # -- reject -------------------------------------------------------------
+
+    async def reject(self, item_id: str, *, reason: str) -> IngestionItem:
+        """Rechaza un item (decisión del revisor). Marca `rechazado` con
+        el motivo en `error_detail`. El archivo en Blob queda — se puede
+        re-subir o auditar."""
+        item = await self._ingestion_repo.get(item_id)
+        if item is None:
+            raise NotFoundError(f"Item de ingesta {item_id} no encontrado")
+        return await self._reject(item, reason or "Rechazado por el revisor.")
+
     # -- list ---------------------------------------------------------------
 
     async def list_items(
