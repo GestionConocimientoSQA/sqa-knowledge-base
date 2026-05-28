@@ -99,11 +99,38 @@ class IngestionStatus(StrEnum):
 
 
 class RoleId(StrEnum):
-    """Roles operativos definidos en [[project-roles-capacidades]]."""
+    """Roles globales del sistema (Fase 9 — multi-tenant).
 
-    CAPTURADOR = "capturador"  # Colaborador (QA, automation, áreas transversales)
-    OWNER = "owner"  # Responsable de una carpeta temática
-    GKLEAD = "gklead"  # GK Lead (Líder de Gestión del Conocimiento)
+    Refactor desde 3 roles (`capturador`, `owner`, `gklead`) a 2 ejes:
+    - **Global** (este enum): qué puede hacer en la plataforma.
+    - **Per-proyecto** (`ProjectMemberRole`): qué puede hacer dentro de un
+      proyecto específico.
+
+    El rol `owner` global desaparece — su semántica de aprobador pasa a
+    `project_owner` per-proyecto. El antiguo `capturador` se renombra a
+    `colaborador` (es más fiel al uso real: captura + consulta + revisa).
+
+    Ver `docs/architecture/adr/0009-multi-tenant-projects.md` §D2.
+    """
+
+    COLABORADOR = "colaborador"
+    """Default. Opera dentro de proyectos donde es miembro."""
+    GKLEAD = "gklead"
+    """Super-admin. Crea proyectos, audita, supervisa todos los proyectos."""
+
+
+class ProjectMemberRole(StrEnum):
+    """Rol per-proyecto en `project_members.role` (Fase 9).
+
+    Independiente del rol global: un usuario `colaborador` global puede ser
+    `project_owner` en un proyecto y `member` en otro. El `gk_lead` global
+    no necesita membership (acceso por privilegio).
+    """
+
+    PROJECT_OWNER = "project_owner"
+    """Admin del proyecto: miembros, taxonomía, sesión de doc, aprobaciones."""
+    MEMBER = "member"
+    """Consume y aporta: queries, ingesta (queda pendiente de aprobar)."""
 
 
 # StageId del agente — numéricas 0-5 para modo A, strings para B y C.

@@ -74,7 +74,107 @@ class UserModel(Base):
 
 
 # ===========================================================================
-# Taxonomía (catálogos)
+# Proyectos (Fase 9 — multi-tenant)
+# ===========================================================================
+
+
+class ProjectModel(Base):
+    """Proyecto = workspace aislado con su propio knowledge base.
+
+    El `id` es UUID4 string para alinear con el resto de IDs del sistema.
+    El `slug` es el identificador legible (URL-safe); `gk-general` es el
+    proyecto seed creado por la migración inicial de Fase 9.
+    """
+
+    __tablename__ = "projects"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    owner_oid: Mapped[str] = mapped_column(
+        String(128), ForeignKey("users.oid"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class ProjectMemberModel(Base):
+    """Membresía usuario↔proyecto + rol per-proyecto.
+
+    PK compuesta `(project_id, user_oid)`. El `role` es independiente del
+    rol global del usuario.
+    """
+
+    __tablename__ = "project_members"
+
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_oid: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("users.oid", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_project_members_user_oid", "user_oid"),
+    )
+
+
+class ProjectCategoryModel(Base):
+    """Override / extensión per-proyecto del catálogo global de carpetas.
+
+    Resolución efectiva = global ∪ (overrides + extensiones del proyecto).
+    Ver `ProjectTaxonomyService` en Fase 9.4.
+    """
+
+    __tablename__ = "project_categories"
+
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    parent_global_code: Mapped[str | None] = mapped_column(
+        String(16), ForeignKey("categories.code"), nullable=True
+    )
+    is_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    """True si reemplaza label del global; False si es extensión nueva."""
+
+
+class ProjectDocTypeModel(Base):
+    """Override / extensión per-proyecto del catálogo global de tipos."""
+
+    __tablename__ = "project_doc_types"
+
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    parent_global_code: Mapped[str | None] = mapped_column(
+        String(16), ForeignKey("doc_types.code"), nullable=True
+    )
+    is_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+# ===========================================================================
+# Taxonomía (catálogos globales — fallback)
 # ===========================================================================
 
 
@@ -106,6 +206,12 @@ class DocumentModel(Base):
     __tablename__ = "documents"
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     titulo: Mapped[str] = mapped_column(String(500), nullable=False)
     carpeta: Mapped[str] = mapped_column(
         String(8), ForeignKey("categories.code"), nullable=False, index=True
@@ -174,6 +280,14 @@ class DocumentChunkModel(Base):
     __tablename__ = "document_chunks"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    """Denormalizado desde documents.project_id para acelerar el filtro en
+    el retriever sin JOIN. La migración 9.1 lo backfileea desde el doc padre."""
     document_id: Mapped[str] = mapped_column(
         String(128),
         ForeignKey("documents.id", ondelete="CASCADE"),
@@ -204,6 +318,12 @@ class SessionModel(Base):
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     owner_oid: Mapped[str] = mapped_column(
         String(128), ForeignKey("users.oid"), nullable=False, index=True
     )
@@ -281,6 +401,12 @@ class IngestionItemModel(Base):
     __tablename__ = "ingestion_items"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     paginas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -308,6 +434,12 @@ class QueryModel(Base):
     __tablename__ = "queries"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     user_oid: Mapped[str] = mapped_column(
         String(128), ForeignKey("users.oid"), nullable=False, index=True
     )
@@ -418,6 +550,10 @@ __all__ = [
     "HotTopicModel",
     "IngestionItemModel",
     "MessageModel",
+    "ProjectCategoryModel",
+    "ProjectDocTypeModel",
+    "ProjectMemberModel",
+    "ProjectModel",
     "QueryCitationModel",
     "QueryModel",
     "RecentActivityModel",

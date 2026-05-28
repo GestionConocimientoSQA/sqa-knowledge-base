@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from sqa_kb.adapters.repositories.postgres import models
+from sqa_kb.adapters.repositories.postgres.mappers import GK_GENERAL_PROJECT_ID
 from sqa_kb.adapters.repositories.postgres.session import session_scope
 from sqa_kb.domain.entities import DocumentChunk
 
@@ -40,9 +41,12 @@ class PostgresChunkRepository:
         # `metadata`) para esquivar el shadow del `MetaData` reservado de
         # SQLAlchemy Declarative. La columna real en la DB sí se llama
         # `metadata` (vía `mapped_column("metadata", ...)`).
+        # `project_id` queda con default GK-General hasta Fase 9.3 donde
+        # los servicios lo pasarán explícito desde el contexto del request.
         rows = [
             {
                 "id": c.id,
+                "project_id": GK_GENERAL_PROJECT_ID,
                 "document_id": c.document_id,
                 "chunk_index": c.chunk_index,
                 "content": c.content,

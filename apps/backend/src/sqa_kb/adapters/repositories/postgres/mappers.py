@@ -26,10 +26,19 @@ from sqa_kb.domain.value_objects import (
     IngestionStatus,
     MessageRole,
     MessageStatus,
+    ProjectMemberRole,
     RoleId,
     SessionMode,
     SessionStatus,
 )
+
+# Fase 9.1: ID del proyecto seed que aloja todos los datos pre-existentes.
+# Se materializa con la migración `c8e2f5a1d3b6 → d4f9a8e2b1c3` y vive
+# en `projects` para que los FKs sean satisfactibles desde el día 0 de
+# Fase 9. En Fase 9.3, los servicios pasan `project_id` explícito desde
+# el contexto del request; mientras tanto este es el default de los
+# `new_*_model` para mantener compatibilidad con el código pre-9.3.
+GK_GENERAL_PROJECT_ID = "00000000-0000-0000-0000-000000000001"
 
 # ===========================================================================
 # Users
@@ -140,9 +149,13 @@ def to_document_detail_entity(
     )
 
 
-def new_document_model(entity: entities.Document) -> models.DocumentModel:
+def new_document_model(
+    entity: entities.Document,
+    project_id: str = GK_GENERAL_PROJECT_ID,
+) -> models.DocumentModel:
     return models.DocumentModel(
         id=entity.id,
+        project_id=project_id,
         titulo=entity.titulo,
         carpeta=str(entity.carpeta),
         tipo=str(entity.tipo),
@@ -191,12 +204,16 @@ def to_session_entity(model: models.SessionModel) -> entities.Session:
     )
 
 
-def new_session_model(entity: entities.Session) -> models.SessionModel:
+def new_session_model(
+    entity: entities.Session,
+    project_id: str = GK_GENERAL_PROJECT_ID,
+) -> models.SessionModel:
     stage_str: str | None = (
         str(entity.current_stage) if entity.current_stage is not None else None
     )
     return models.SessionModel(
         id=entity.id,
+        project_id=project_id,
         owner_oid=entity.owner_oid,
         mode=str(entity.mode),
         title=entity.title,
@@ -296,9 +313,13 @@ def to_ingestion_entity(model: models.IngestionItemModel) -> entities.IngestionI
     )
 
 
-def new_ingestion_model(entity: entities.IngestionItem) -> models.IngestionItemModel:
+def new_ingestion_model(
+    entity: entities.IngestionItem,
+    project_id: str = GK_GENERAL_PROJECT_ID,
+) -> models.IngestionItemModel:
     return models.IngestionItemModel(
         id=entity.id,
+        project_id=project_id,
         filename=entity.filename,
         size_bytes=entity.size_bytes,
         paginas=entity.paginas,
@@ -361,6 +382,55 @@ def to_activity_entity(model: models.RecentActivityModel) -> entities.RecentActi
         at=model.at,
         summary=model.summary,
         ref_url=model.ref_url,
+    )
+
+
+# ===========================================================================
+# Projects + ProjectMembers (Fase 9.1)
+# ===========================================================================
+
+
+def to_project_entity(model: models.ProjectModel) -> entities.Project:
+    return entities.Project(
+        id=model.id,
+        slug=model.slug,
+        name=model.name,
+        description=model.description,
+        owner_oid=model.owner_oid,
+        created_at=model.created_at,
+        archived_at=model.archived_at,
+    )
+
+
+def new_project_model(entity: entities.Project) -> models.ProjectModel:
+    return models.ProjectModel(
+        id=entity.id,
+        slug=entity.slug,
+        name=entity.name,
+        description=entity.description,
+        owner_oid=entity.owner_oid,
+        archived_at=entity.archived_at,
+    )
+
+
+def to_project_member_entity(
+    model: models.ProjectMemberModel,
+) -> entities.ProjectMember:
+    return entities.ProjectMember(
+        project_id=model.project_id,
+        user_oid=model.user_oid,
+        role=ProjectMemberRole(model.role),
+        added_at=model.added_at,
+    )
+
+
+def new_project_member_model(
+    entity: entities.ProjectMember,
+) -> models.ProjectMemberModel:
+    return models.ProjectMemberModel(
+        project_id=entity.project_id,
+        user_oid=entity.user_oid,
+        role=str(entity.role),
     )
 
 

@@ -40,6 +40,7 @@ from sqa_kb.domain.value_objects import (
     IngestionStatus,
     MessageRole,
     MessageStatus,
+    ProjectMemberRole,
     RoleId,
     SessionMode,
     SessionStatus,
@@ -87,15 +88,22 @@ class _Base(BaseModel):
 
 
 class User(_Base):
-    """Usuario autenticado del sistema.
+    """Usuario autenticado del sistema (Fase 9 — multi-tenant).
 
     Espejo del `AuthUser` en frontend. En backend Fase 1B se crea/actualiza
     desde el JWT de Entra ID en el primer login.
 
-    El modelo de permisos NO es un boolean `isAdmin` (ver
-    [[project-roles-capacidades]]). Se modela con campos finos para que
-    Owner sea admin sólo sobre `carpetas_owned`, GK Lead sea admin sobre
-    todo, y Capturador sobre nada.
+    El modelo de permisos tiene **dos ejes ortogonales**:
+    - `role_id` (este campo): rol global — `colaborador` o `gk_lead`.
+    - `project_members.role` (otra tabla): rol per-proyecto —
+      `project_owner` o `member`. Ver `ProjectMembership`.
+
+    Los campos `carpetas_owned` y `puede_*` son **legacy** de Fase 1 y se
+    ignoran a partir de Fase 9 (la capacidad efectiva se calcula con
+    `PermissionPolicy` + rol global + membership del proyecto activo). Se
+    mantienen en el modelo para no romper la wire del frontend Fase 5-8
+    mientras el selector global no esté wireado (Fase 9.8). Limpieza
+    definitiva: Fase 11.
     """
 
     oid: NonEmptyStr = Field(description="Entra Object ID (claim `oid` del JWT)")
@@ -104,30 +112,134 @@ class User(_Base):
     role_id: RoleId
     carpetas_owned: list[CategoryCode] = Field(
         default_factory=list,
-        description="Carpetas sobre las que Owner tiene admin. [] para Capturador y GK Lead.",
+        description="LEGACY (Fase 1): carpetas del rol owner. Vacío en Fase 9.",
     )
     puede_gobernar_taxonomia: bool = False
-    """Solo GK Lead. Permite crear/modificar carpetas, tipos, skills."""
+    """LEGACY (Fase 1). Reemplazado por `is_gk_lead` + per-proyecto."""
     puede_aprobar_taxonomia: bool = False
-    """Fase 2. Workflow de approval para cambios a la taxonomía."""
+    """LEGACY (Fase 1). Reemplazado por per-proyecto `project_owner`."""
     puede_ver_metricas_globales: bool = False
-    """GK Lead: True. Owner: True para sus carpetas (filtrado en query)."""
+    """LEGACY (Fase 1). En Fase 9 solo `gk_lead` ve métricas globales."""
     created_at: datetime
     updated_at: datetime
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def is_admin(self) -> bool:
-        """Compatibilidad con el frontend: True si Owner o GK Lead.
+        """Admin global = solo GK Lead (Fase 9).
+
+        El antiguo `owner` global desapareció — su semántica pasó a
+        `project_owner` per-proyecto, que NO es admin global. Los pantallas
+        que dependían de `is_admin` para gating se actualizan en Fase 9.6+
+        para usar `PermissionPolicy(user, project)`.
 
         Decorado con `computed_field` para que aparezca en `.model_dump()`
         y en la respuesta JSON del API — el frontend espera este campo.
-
-        En servicios del backend, **NO usar `is_admin`** — usar los flags
-        finos. Este property existe solo para hidratar el `AuthUser` que
-        el frontend espera hoy.
         """
-        return self.role_id in (RoleId.OWNER, RoleId.GKLEAD)
+        return self.role_id == RoleId.GKLEAD
+
+
+# ===========================================================================
+# Proyectos (Fase 9 — multi-tenant)
+# ===========================================================================
+
+
+class Project(_Base):
+    """Espacio de trabajo aislado con su propia base de conocimiento.
+
+    Cada documento, sesión, query e ítem de ingesta pertenece a UN proyecto
+    (via `project_id` FK). Las consultas RAG están scopeadas obligatoriamente.
+    Ver ADR 0009.
+    """
+
+    id: NonEmptyStr
+    """UUID4. El proyecto seed se llama `gk-general` (slug)."""
+    slug: Annotated[str, Field(min_length=2, max_length=64, pattern=r"^[a-z][a-z0-9-]*$")]
+    """Identificador legible URL-safe (kebab-case, sin acentos)."""
+    name: NonEmptyStr
+    description: str = ""
+    owner_oid: NonEmptyStr
+    """OID del usuario designado por GK Lead como `project_owner` inicial."""
+    created_at: datetime
+    archived_at: datetime | None = None
+    """ISO timestamp. Si está, el proyecto está archivado (read-only)."""
+
+
+class ProjectMember(_Base):
+    """Membresía de un usuario en un proyecto (Fase 9).
+
+    Tabla compuesta `(project_id, user_oid)` PK. El `role` define qué puede
+    hacer dentro del proyecto — independiente del rol global del usuario.
+    """
+
+    project_id: NonEmptyStr
+    user_oid: NonEmptyStr
+    role: ProjectMemberRole
+    added_at: datetime
+
+
+class ProjectMembership(_Base):
+    """Vista derivada para autorizar al usuario en un proyecto (Fase 9).
+
+    Combina el rol global del `User` con su rol per-proyecto (si existe). Es
+    un value object — no se persiste, se construye on-demand por la
+    `PermissionPolicy` en cada request. Centraliza las decisiones de
+    autorización para que no se filtren a la capa HTTP.
+    """
+
+    project_id: NonEmptyStr
+    user_oid: NonEmptyStr
+    global_role: RoleId
+    project_role: ProjectMemberRole | None = None
+    """`None` si el usuario no es miembro. GK Lead opera sin necesidad de
+    membership, pero las acciones quedan auditadas como override."""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_gk_lead(self) -> bool:
+        return self.global_role == RoleId.GKLEAD
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_project_owner(self) -> bool:
+        return self.project_role == ProjectMemberRole.PROJECT_OWNER
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_read(self) -> bool:
+        """Lee documentos, hace queries, ve la cola de ingesta."""
+        return self.is_gk_lead or self.project_role is not None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_ingest(self) -> bool:
+        """Sube documentos al pipeline (quedan pendientes de aprobación)."""
+        return self.is_gk_lead or self.project_role is not None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_approve(self) -> bool:
+        """Aprueba/rechaza ítems de ingesta. Principal en `project_owner`;
+        habilitado en `gk_lead` como override de auditoría."""
+        return self.is_gk_lead or self.is_project_owner
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_manage_members(self) -> bool:
+        """Añade/quita miembros del proyecto."""
+        return self.is_gk_lead or self.is_project_owner
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_edit_taxonomy(self) -> bool:
+        """Modifica taxonomía del proyecto (no la global)."""
+        return self.is_gk_lead or self.is_project_owner
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_run_documentation_session(self) -> bool:
+        """Corre la sesión guiada con el agente."""
+        return self.is_gk_lead or self.is_project_owner
 
 
 # ===========================================================================

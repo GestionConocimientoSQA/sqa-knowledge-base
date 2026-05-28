@@ -121,25 +121,24 @@ async def set_authoritative(
     repo: DocumentRepoDep,
     user: CurrentUser,
 ) -> Document:
-    """Marca/desmarca un documento como autoritativo. Solo admin —
-    Owner sobre sus `carpetas_owned`, GK Lead sobre cualquiera.
+    """Marca/desmarca un documento como autoritativo.
+
+    Fase 9.1: el rol global `owner` desapareció. Por ahora solo GK Lead
+    puede marcar autoritativo (`user.is_admin` ya equivale a GK Lead).
+    En Fase 9.3 se reemplaza por check de membership: el `project_owner`
+    del proyecto al que pertenece el documento también podrá marcarlo.
 
     El enforcement vive acá (no en el repo) porque es decisión de servicio,
-    no de persistencia. El audit log debe registrarlo cuando llegue 1B+.
+    no de persistencia. El audit log lo registra a partir de 1B+.
     """
     if not user.is_admin:
-        raise ForbiddenError("Solo Owner o GK Lead pueden marcar autoritativo")
+        raise ForbiddenError("Solo GK Lead puede marcar autoritativo (Fase 9.1)")
 
-    # Owner solo sobre sus carpetas. GK Lead sobre todo.
-    if user.role_id == "owner":
-        # Necesitamos leer la carpeta del doc.
-        doc = await repo.get(document_id)
-        if doc is None:
-            raise NotFoundError(f"Documento {document_id} no encontrado")
-        if doc.carpeta not in user.carpetas_owned:
-            raise ForbiddenError(
-                f"Owner no es responsable de la carpeta {doc.carpeta}"
-            )
+    # Verificamos que el doc exista para devolver 404 explícito antes
+    # de delegar al repo.
+    doc = await repo.get(document_id)
+    if doc is None:
+        raise NotFoundError(f"Documento {document_id} no encontrado")
 
     return await repo.set_authoritative(
         document_id, value=body.value, caller_oid=user.oid

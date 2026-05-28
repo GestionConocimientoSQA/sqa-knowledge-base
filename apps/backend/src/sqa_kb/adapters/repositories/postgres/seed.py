@@ -56,14 +56,18 @@ DOC_TYPES: list[dict[str, str]] = [
 ]
 
 # 3 usuarios stub — mismos OIDs que el dev provider Fase 1B.3 emite cuando
-# el frontend pide login con cada rol. Los `carpetas_owned` los seteamos
-# para que Owner sea admin sobre TEC + ARQ (caso típico).
+# el frontend pide login con cada rol.
+#
+# Fase 9.1: el rol global se redujo a `colaborador | gklead`. La capacidad
+# de aprobador (antiguo `owner`) ahora vive en `project_members.role` como
+# `project_owner` per-proyecto. Los flags `puede_*` y `carpetas_owned`
+# quedan en `false`/`[]` — son legacy, ignorados a partir de Fase 9.
 USERS: list[dict[str, object]] = [
     {
         "oid": "stub-capturador-00000000",
         "email": "lucia.vargas@sqa.co",
         "name": "Lucía Vargas",
-        "role_id": "capturador",
+        "role_id": "colaborador",
         "carpetas_owned": [],
         "puede_gobernar_taxonomia": False,
         "puede_aprobar_taxonomia": False,
@@ -73,11 +77,11 @@ USERS: list[dict[str, object]] = [
         "oid": "stub-owner-00000000",
         "email": "camila.pereyra@sqa.co",
         "name": "Camila Pereyra",
-        "role_id": "owner",
-        "carpetas_owned": ["TEC", "ARQ"],
+        "role_id": "colaborador",
+        "carpetas_owned": [],
         "puede_gobernar_taxonomia": False,
         "puede_aprobar_taxonomia": False,
-        "puede_ver_metricas_globales": True,
+        "puede_ver_metricas_globales": False,
     },
     {
         "oid": "stub-gklead-00000000",
@@ -88,6 +92,41 @@ USERS: list[dict[str, object]] = [
         "puede_gobernar_taxonomia": True,
         "puede_aprobar_taxonomia": True,
         "puede_ver_metricas_globales": True,
+    },
+]
+
+# Proyecto seed gk-general — mismo UUID que la migración. Aloja todo el
+# conocimiento pre-Fase 9 + el conocimiento transversal de GK.
+GK_GENERAL_PROJECT_ID = "00000000-0000-0000-0000-000000000001"
+GK_GENERAL_PROJECT: dict[str, object] = {
+    "id": GK_GENERAL_PROJECT_ID,
+    "slug": "gk-general",
+    "name": "GK General",
+    "description": (
+        "Proyecto raíz transversal de SQA Colombia. Aloja el conocimiento "
+        "aplicable a toda la organización."
+    ),
+    "owner_oid": "stub-gklead-00000000",
+}
+
+# Memberships del proyecto seed: GK Lead como project_owner (además de su
+# privilegio global), Camila como project_owner (heredando su ex-rol owner),
+# Lucía como member.
+PROJECT_MEMBERS: list[dict[str, object]] = [
+    {
+        "project_id": GK_GENERAL_PROJECT_ID,
+        "user_oid": "stub-gklead-00000000",
+        "role": "project_owner",
+    },
+    {
+        "project_id": GK_GENERAL_PROJECT_ID,
+        "user_oid": "stub-owner-00000000",
+        "role": "project_owner",
+    },
+    {
+        "project_id": GK_GENERAL_PROJECT_ID,
+        "user_oid": "stub-capturador-00000000",
+        "role": "member",
     },
 ]
 
@@ -114,6 +153,21 @@ async def seed(session_factory: async_sessionmaker) -> dict[str, int]:
             stmt = stmt.on_conflict_do_nothing(index_elements=["oid"])
             await db.execute(stmt)
 
+        # Proyecto seed gk-general (Fase 9.1) — la migración Alembic ya lo
+        # crea, pero re-insertamos idempotente para entornos que pueden
+        # haberse re-seedeado manualmente sin reaplicar migraciones.
+        stmt = pg_insert(models.ProjectModel).values([GK_GENERAL_PROJECT])
+        stmt = stmt.on_conflict_do_nothing(index_elements=["id"])
+        await db.execute(stmt)
+
+        # Memberships del proyecto seed.
+        if PROJECT_MEMBERS:
+            stmt = pg_insert(models.ProjectMemberModel).values(PROJECT_MEMBERS)
+            stmt = stmt.on_conflict_do_nothing(
+                index_elements=["project_id", "user_oid"]
+            )
+            await db.execute(stmt)
+
     # Counts post-seed (separada para no mezclar con commit del scope anterior).
     async with session_factory() as db:
         from sqlalchemy import func, select
@@ -127,7 +181,21 @@ async def seed(session_factory: async_sessionmaker) -> dict[str, int]:
         usrs = (
             await db.execute(select(func.count()).select_from(models.UserModel))
         ).scalar_one()
-        return {"categories": cats, "doc_types": dts, "users": usrs}
+        projs = (
+            await db.execute(select(func.count()).select_from(models.ProjectModel))
+        ).scalar_one()
+        mems = (
+            await db.execute(
+                select(func.count()).select_from(models.ProjectMemberModel)
+            )
+        ).scalar_one()
+        return {
+            "categories": cats,
+            "doc_types": dts,
+            "users": usrs,
+            "projects": projs,
+            "project_members": mems,
+        }
 
 
 async def main() -> None:

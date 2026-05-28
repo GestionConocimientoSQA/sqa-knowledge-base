@@ -3,7 +3,16 @@
 // (Colaborador), Owner de carpeta, GK Lead. El antiguo "Curador" desaparece
 // como rol de login — en Fase 2 será una asignación por carpeta que hace el
 // Owner, no un usuario propio.
+//
+// Fase 9.1 (TODO — frontend pending para 9.6/9.7/9.8): el backend ya migró
+// a un modelo de 2 ejes (`colaborador | gklead` global + `project_owner |
+// member` per-proyecto). El frontend mantiene los 3 roles legacy en wire
+// y mocks mientras no exista el selector global de proyecto activo. La
+// migración se hace cuando se cablea Zustand + selector en navbar.
 export type RoleId = "capturador" | "owner" | "gklead";
+
+/** Rol per-proyecto (Fase 9). Wired completo en 9.6/9.7/9.8. */
+export type ProjectMemberRole = "project_owner" | "member";
 
 export interface Role {
   id: RoleId;
