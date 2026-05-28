@@ -103,21 +103,21 @@ async def test_user_repo_upsert_creates_and_updates(session_factory) -> None:  #
         oid=oid,
         email=email,
         name="Test User",
-        role_id=RoleId.CAPTURADOR,
+        role_id=RoleId.COLABORADOR,
         created_at=_now(),
         updated_at=_now(),
     )
     created = await repo.upsert_from_token(fresh)
     assert created.oid == oid
-    assert created.role_id == "capturador"
+    assert created.role_id == "colaborador"
 
     # Mismo OID con nombre cambiado → actualiza, no duplica.
     updated_in = User(
-        **{**fresh.model_dump(), "name": "Renamed", "role_id": RoleId.OWNER}
+        **{**fresh.model_dump(), "name": "Renamed", "role_id": RoleId.GKLEAD}
     )
     updated = await repo.upsert_from_token(updated_in)
     assert updated.name == "Renamed"
-    assert updated.role_id == "owner"
+    assert updated.role_id == "gklead"
 
 
 # ===========================================================================
@@ -247,7 +247,7 @@ async def test_document_list_by_author_aggregates_stats(session_factory) -> None
             oid=author_oid,
             email=f"{author_oid}@sqa.co",
             name="Author for stats test",
-            role_id=RoleId.CAPTURADOR,
+            role_id=RoleId.COLABORADOR,
             created_at=_now(),
             updated_at=_now(),
         )

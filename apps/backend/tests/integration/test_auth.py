@@ -43,7 +43,11 @@ def test_me_with_unknown_oid_returns_401(client: TestClient) -> None:
     assert "no existe" in response.json()["error"]["message"].lower()
 
 
-def test_me_with_capturador_token(client: TestClient) -> None:
+def test_me_with_colaborador_token(client: TestClient) -> None:
+    """Fase 9.1: el stub `stub-capturador-00000000` ahora resuelve a un
+    `colaborador` global (el seed lo migró). El frontend sigue mandando
+    el mismo bearer hasta que 9.6/9.7/9.8 cableen el selector — la wire
+    del OID queda igual."""
     response = client.get(
         "/auth/me",
         headers={"Authorization": "Bearer dev:stub-capturador-00000000"},
@@ -53,23 +57,25 @@ def test_me_with_capturador_token(client: TestClient) -> None:
     # El backend serializa en camelCase (alias_generator=to_camel) para que
     # el frontend pueda usarlo sin mappers manuales.
     assert body["oid"] == "stub-capturador-00000000"
-    assert body["roleId"] == "capturador"
+    assert body["roleId"] == "colaborador"
     assert body["isAdmin"] is False
     assert body["puedeGobernarTaxonomia"] is False
     assert body["puedeVerMetricasGlobales"] is False
 
 
-def test_me_with_owner_token_returns_carpetas_owned(client: TestClient) -> None:
+def test_me_with_ex_owner_now_colaborador(client: TestClient) -> None:
+    """Fase 9.1: el stub `stub-owner-00000000` (ex-Owner) ahora es
+    `colaborador` global. Su rol de aprobador se materializa como
+    `project_owner` en la tabla `project_members` para `gk-general`.
+    `isAdmin` ahora es False (solo `gklead` es admin global)."""
     response = client.get(
         "/auth/me",
         headers={"Authorization": "Bearer dev:stub-owner-00000000"},
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["roleId"] == "owner"
-    assert body["isAdmin"] is True
-    assert "TEC" in body["carpetasOwned"]
-    assert "ARQ" in body["carpetasOwned"]
+    assert body["roleId"] == "colaborador"
+    assert body["isAdmin"] is False
 
 
 def test_me_with_gklead_has_full_powers(client: TestClient) -> None:

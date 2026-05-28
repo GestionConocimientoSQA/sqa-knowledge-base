@@ -85,13 +85,16 @@ class _FakeService:
 
 
 def _user() -> User:
+    """Fase 9.1: usamos gklead para que `is_admin = True` y los endpoints
+    de ingesta admitan al test (gating actual). En 9.3 esto se reemplaza
+    por verificación de membership."""
     now = datetime.now(UTC)
     return User(
-        oid="stub-capturador-00000000",
+        oid="stub-gklead-00000000",
         email="t@sqasa.co",
         name="Tester",
-        role_id=RoleId.OWNER,
-        carpetas_owned=["TEC"],
+        role_id=RoleId.GKLEAD,
+        carpetas_owned=[],
         created_at=now,
         updated_at=now,
     )
@@ -129,7 +132,7 @@ def test_upload_returns_201_and_item(client_and_service) -> None:  # type: ignor
     # El servicio recibió el archivo.
     assert svc.last_upload is not None
     assert svc.last_upload["filename"] == "memoria.docx"
-    assert svc.last_upload["oid"] == "stub-capturador-00000000"
+    assert svc.last_upload["oid"] == "stub-gklead-00000000"
 
 
 def test_upload_passes_source_origin_query(client_and_service) -> None:  # type: ignore[no-untyped-def]

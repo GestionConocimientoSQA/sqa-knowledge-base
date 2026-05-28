@@ -57,7 +57,8 @@ def test_is_valid_stage_rejects_invalid(bad: object) -> None:
 def test_enums_exhaustivos() -> None:
     assert len(list(CategoryCode)) == 8
     assert len(list(DocTypeCode)) == 11
-    assert len(list(RoleId)) == 3
+    # Fase 9.1: RoleId redujo a 2 roles globales {colaborador, gklead}.
+    assert len(list(RoleId)) == 2
     assert set(SessionMode) == {SessionMode.CAPTURA, SessionMode.CONSULTA, SessionMode.INGESTA}
 
 
@@ -68,26 +69,35 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def test_user_is_admin_for_owner_and_gklead() -> None:
+def test_user_is_admin_only_for_gklead() -> None:
+    """Fase 9.1: `is_admin` (legacy) = solo gklead.
+
+    El antiguo `owner` global desapareció — su semántica pasó a
+    `project_owner` per-proyecto. Por eso un `colaborador` (cualquiera
+    que NO sea gklead) no es admin global.
+    """
     base = {
         "email": "x@sqa.co",
         "name": "X",
         "created_at": _now(),
         "updated_at": _now(),
     }
-    assert User(oid="o1", role_id=RoleId.OWNER, **base).is_admin
-    assert User(oid="o2", role_id=RoleId.GKLEAD, **base).is_admin
-    assert not User(oid="o3", role_id=RoleId.CAPTURADOR, **base).is_admin
+    assert User(oid="o1", role_id=RoleId.GKLEAD, **base).is_admin
+    assert not User(oid="o2", role_id=RoleId.COLABORADOR, **base).is_admin
 
 
-def test_user_carpetas_owned_only_for_owner() -> None:
-    # Semánticamente las carpetas_owned solo tienen sentido para Owner.
-    # El modelo NO lo enforce hoy (es soft) — confiamos en services.
+def test_user_carpetas_owned_legacy() -> None:
+    """Fase 9.1: `carpetas_owned` queda como campo legacy del modelo.
+
+    El modelo lo acepta para no romper la wire del frontend Fase 5-8,
+    pero el backend ya no lo usa para decisiones de permisos (se reemplazó
+    por membership de proyectos).
+    """
     u = User(
         oid="o1",
         email="x@sqa.co",
         name="X",
-        role_id=RoleId.OWNER,
+        role_id=RoleId.COLABORADOR,
         carpetas_owned=[CategoryCode.TEC, CategoryCode.ARQ],
         created_at=_now(),
         updated_at=_now(),

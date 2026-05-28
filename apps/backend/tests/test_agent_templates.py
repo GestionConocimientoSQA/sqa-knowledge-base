@@ -86,7 +86,7 @@ def test_system_prompt_with_one_skill() -> None:
         "system_prompt.j2",
         agent_name="Aria",
         user_name="A",
-        user_role="capturador",
+        user_role="colaborador",
         mode="capture",
         skills=[skill],
     )

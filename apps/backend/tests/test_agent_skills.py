@@ -176,7 +176,7 @@ def test_render_system_prompt_injects_skill_bodies() -> None:
     ]
     out = render_system_prompt(
         user_name="A",
-        user_role="capturador",
+        user_role="colaborador",
         mode="capture",
         skills=skills,
     )
