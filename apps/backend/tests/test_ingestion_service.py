@@ -353,3 +353,34 @@ async def test_list_all_when_no_status_filter() -> None:
     await svc.upload(filename="b.docx", data=_docx_bytes(), uploaded_by_oid="o")
     all_items = await svc.list_items()
     assert len(all_items) == 2
+
+
+# ===========================================================================
+# reject
+# ===========================================================================
+
+
+async def test_reject_marks_item_rechazado_with_reason() -> None:
+    svc, _ = _service()
+    item = await svc.upload(
+        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o"
+    )
+    rejected = await svc.reject(item.id, reason="No cumple el estándar SQA")
+    assert rejected.status == IngestionStatus.RECHAZADO
+    assert rejected.error_detail == "No cumple el estándar SQA"
+
+
+async def test_reject_unknown_item_raises() -> None:
+    svc, _ = _service()
+    with pytest.raises(NotFoundError):
+        await svc.reject("ing-noexiste", reason="x")
+
+
+async def test_reject_empty_reason_uses_default() -> None:
+    svc, _ = _service()
+    item = await svc.upload(
+        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o"
+    )
+    rejected = await svc.reject(item.id, reason="")
+    assert rejected.status == IngestionStatus.RECHAZADO
+    assert rejected.error_detail  # default no vacío
