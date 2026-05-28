@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sqa_kb.adapters.repositories.postgres import models
+from sqa_kb.adapters.repositories.postgres.mappers import GK_GENERAL_PROJECT_ID
 from sqa_kb.adapters.repositories.postgres.seed import seed
 from sqa_kb.adapters.repositories.postgres.session import session_scope
 from sqa_kb.main import create_app
@@ -70,6 +71,7 @@ async def _make_doc_in_db(session_factory, *, id: str, **overrides) -> None:  # 
     """Helper para crear documentos directos en DB (más rápido que via API)."""
     defaults = {
         "id": id,
+        "project_id": GK_GENERAL_PROJECT_ID,
         "titulo": "Doc test",
         "carpeta": "TEC",
         "tipo": "MTEC",
@@ -171,26 +173,30 @@ async def test_set_authoritative_gklead_ok(
     assert response.json()["autoritativo"] is True
 
 
-async def test_set_authoritative_owner_on_own_folder(
+async def test_set_authoritative_gklead_can_mark_any_folder(
     client: TestClient, session_factory  # type: ignore[no-untyped-def]
 ) -> None:
-    # Owner seed tiene carpetas_owned=[TEC, ARQ] — un doc TEC pasa.
+    """Fase 9.1: el rol global `owner` desapareció. Solo GK Lead puede
+    marcar autoritativo. En Fase 9.3 esto se reabre a `project_owner`
+    del proyecto al que pertenece el doc (con check de membership)."""
     suffix = uuid.uuid4().hex[:6]
     doc_id = f"TEC-test-{suffix}-2026-05-22"
     await _make_doc_in_db(session_factory, id=doc_id, carpeta="TEC")
 
     response = client.patch(
         f"/documents/{doc_id}/authoritative",
-        headers={"Authorization": OWNER},
+        headers={"Authorization": GKLEAD},
         json={"value": True},
     )
     assert response.status_code == 200
 
 
-async def test_set_authoritative_owner_on_other_folder_forbidden(
+async def test_set_authoritative_ex_owner_now_colaborador_forbidden(
     client: TestClient, session_factory  # type: ignore[no-untyped-def]
 ) -> None:
-    # Owner NO tiene PROC en sus carpetas_owned → 403.
+    """Fase 9.1: el bearer OWNER ahora resuelve a un `colaborador` global
+    (sin `isAdmin`). Marcar autoritativo le da 403. La capacidad de
+    aprobador la recupera via membership `project_owner` en Fase 9.3."""
     suffix = uuid.uuid4().hex[:6]
     doc_id = f"PROC-test-{suffix}-2026-05-22"
     await _make_doc_in_db(session_factory, id=doc_id, carpeta="PROC")

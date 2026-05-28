@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
 from sqa_kb.adapters.repositories.postgres import models
+from sqa_kb.adapters.repositories.postgres.mappers import GK_GENERAL_PROJECT_ID
 from sqa_kb.adapters.repositories.postgres.seed import seed
 from sqa_kb.adapters.repositories.postgres.session import session_scope
 from sqa_kb.api.dependencies import get_kb_searcher
@@ -132,6 +133,7 @@ async def _create_doc_in_db(  # type: ignore[no-untyped-def]
         db.add(
             models.DocumentModel(
                 id=doc_id,
+                project_id=GK_GENERAL_PROJECT_ID,
                 titulo="Doc test",
                 carpeta=carpeta,
                 tipo=tipo,

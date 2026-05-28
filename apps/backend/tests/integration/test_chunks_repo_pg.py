@@ -12,6 +12,7 @@ import pytest
 
 from sqa_kb.adapters.repositories.postgres import models
 from sqa_kb.adapters.repositories.postgres.chunks import PostgresChunkRepository
+from sqa_kb.adapters.repositories.postgres.mappers import GK_GENERAL_PROJECT_ID
 from sqa_kb.adapters.repositories.postgres.session import session_scope
 from sqa_kb.domain.entities import DocumentChunk
 
@@ -33,6 +34,7 @@ async def _create_test_document(session_factory, doc_id: str) -> None:  # type: 
         db.add(
             models.DocumentModel(
                 id=doc_id,
+                project_id=GK_GENERAL_PROJECT_ID,
                 titulo="Doc test",
                 carpeta="TEC",
                 tipo="POL",

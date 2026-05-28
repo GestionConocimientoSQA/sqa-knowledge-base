@@ -27,6 +27,7 @@ from sqlalchemy import text
 
 from sqa_kb.adapters.repositories.postgres import models
 from sqa_kb.adapters.repositories.postgres.chunks import PostgresChunkRepository
+from sqa_kb.adapters.repositories.postgres.mappers import GK_GENERAL_PROJECT_ID
 from sqa_kb.adapters.repositories.postgres.session import session_scope
 from sqa_kb.domain.entities import DocumentChunk
 from sqa_kb.ports.gateways import EmbeddingBatch
@@ -102,6 +103,7 @@ async def _ensure_doc(  # type: ignore[no-untyped-def]
         db.add(
             models.DocumentModel(
                 id=doc_id,
+                project_id=GK_GENERAL_PROJECT_ID,
                 titulo=titulo,
                 carpeta=carpeta,
                 tipo=tipo,
