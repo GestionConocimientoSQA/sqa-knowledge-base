@@ -30,6 +30,7 @@ from sqa_kb.domain.entities import (
     IngestionItem,
     Message,
     MyCapturesStats,
+    DocumentationSession,
     Project,
     ProjectCategory,
     ProjectDocType,
@@ -124,6 +125,21 @@ class ProjectTaxonomyRepository(Protocol):
     el global vuelve a estar vigente; si era extensión, desaparece."""
 
     async def delete_doc_type(self, project_id: str, code: str) -> None: ...
+
+
+@runtime_checkable
+class DocumentationSessionRepository(Protocol):
+    """Persistencia del state de sesiones de documentación (Fase 9.5)."""
+
+    async def create(self, session: DocumentationSession) -> DocumentationSession: ...
+
+    async def get(self, session_id: str) -> DocumentationSession | None: ...
+
+    async def list_for_project(
+        self, project_id: str
+    ) -> Sequence[DocumentationSession]: ...
+
+    async def update(self, session: DocumentationSession) -> DocumentationSession: ...
 
 
 @runtime_checkable

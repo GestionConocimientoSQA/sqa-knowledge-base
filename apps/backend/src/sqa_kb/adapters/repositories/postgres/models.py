@@ -33,7 +33,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from sqa_kb.adapters.repositories.postgres.base import Base
@@ -171,6 +171,45 @@ class ProjectDocTypeModel(Base):
         String(16), ForeignKey("doc_types.code"), nullable=True
     )
     is_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class DocumentationSessionModel(Base):
+    """Sesión guiada de captura de conocimiento del cliente (Fase 9.5)."""
+
+    __tablename__ = "documentation_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    owner_oid: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    current_step: Mapped[str] = mapped_column(String(20), nullable=False)
+    step_data: Mapped[dict] = mapped_column(  # type: ignore[type-arg]
+        JSONB, nullable=False, default=dict
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    finalized_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    generated_document_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(String(128)), nullable=False, default=list
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_documentation_sessions_project_status",
+            "project_id",
+            "status",
+        ),
+        Index(
+            "ix_documentation_sessions_owner", "owner_oid", "started_at"
+        ),
+    )
 
 
 # ===========================================================================

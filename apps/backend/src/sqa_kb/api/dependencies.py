@@ -156,3 +156,14 @@ from sqa_kb.services.project_taxonomy_service import (  # noqa: E402
 ProjectTaxonomyServiceDep = Annotated[
     ProjectTaxonomyService, Depends(get_project_taxonomy_service)
 ]
+
+# DocumentationSessionService para sesiones guiadas (Fase 9.5).
+get_documentation_session_service = _from_state("documentation_session_service")
+
+from sqa_kb.services.documentation_session_service import (  # noqa: E402
+    DocumentationSessionService,
+)
+
+DocumentationSessionServiceDep = Annotated[
+    DocumentationSessionService, Depends(get_documentation_session_service)
+]

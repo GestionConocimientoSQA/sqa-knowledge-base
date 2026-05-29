@@ -42,6 +42,9 @@ from sqa_kb.adapters.repositories.postgres.audit_log import (
     PostgresAuditLogRepository,
 )
 from sqa_kb.adapters.repositories.postgres.chunks import PostgresChunkRepository
+from sqa_kb.adapters.repositories.postgres.documentation_sessions import (
+    PostgresDocumentationSessionRepository,
+)
 from sqa_kb.adapters.repositories.postgres.documents import (
     PostgresDocumentRepository,
 )
@@ -74,6 +77,12 @@ from sqa_kb.api.health import register_health_check
 from sqa_kb.api.health import router as health_router
 from sqa_kb.api.ingestion import router as ingestion_router
 from sqa_kb.api.messages import router as messages_router
+from sqa_kb.api.documentation_sessions import (
+    project_router as documentation_project_router,
+)
+from sqa_kb.api.documentation_sessions import (
+    session_router as documentation_session_router,
+)
 from sqa_kb.api.project_taxonomy import router as project_taxonomy_router
 from sqa_kb.api.projects import router as projects_router
 from sqa_kb.api.queries import router as queries_router
@@ -87,6 +96,9 @@ from sqa_kb.middleware.request_id import RequestIdMiddleware
 from sqa_kb.observability.logging import configure_logging, get_logger
 from sqa_kb.rag.hybrid_search import HybridSearcher
 from sqa_kb.rag.indexer import Indexer
+from sqa_kb.services.documentation_session_service import (
+    DocumentationSessionService,
+)
 from sqa_kb.services.ingestion_service import IngestionService
 from sqa_kb.services.project_service import ProjectService
 from sqa_kb.services.project_taxonomy_service import ProjectTaxonomyService
@@ -115,6 +127,9 @@ def _wire_persistence(app: FastAPI, settings: Settings) -> None:
     app.state.ingestion_repo = PostgresIngestionRepository(factory)
     app.state.project_repo = PostgresProjectRepository(factory)
     app.state.project_taxonomy_repo = PostgresProjectTaxonomyRepository(factory)
+    app.state.documentation_session_repo = PostgresDocumentationSessionRepository(
+        factory
+    )
     app.state.project_service = ProjectService(
         project_repo=app.state.project_repo,
         user_repo=user_repo,
@@ -272,6 +287,13 @@ def _wire_ingestion(app: FastAPI, settings: Settings) -> None:
         classifier=classifier,
         indexer_hook=indexer_hook,
     )
+    # Documentation session service depende del ingestion service para
+    # empujar los `.md` generados al pipeline de ingesta del proyecto.
+    app.state.documentation_session_service = DocumentationSessionService(
+        repo=app.state.documentation_session_repo,
+        project_repo=app.state.project_repo,
+        ingestion_service=app.state.ingestion_service,
+    )
 
 
 def _build_classifier(gateway):  # type: ignore[no-untyped-def]
@@ -393,6 +415,8 @@ def create_app() -> FastAPI:
     app.include_router(ingestion_router)
     app.include_router(projects_router)
     app.include_router(project_taxonomy_router)
+    app.include_router(documentation_project_router)
+    app.include_router(documentation_session_router)
 
     @app.get("/", tags=["root"])
     async def root() -> dict[str, str]:

@@ -136,7 +136,16 @@ def test_xlsx_roundtrip_section_per_sheet() -> None:
 
 def test_dispatcher_supported_extensions() -> None:
     d = ExtractorDispatcher()
-    assert d.supported_extensions == ("docx", "pdf", "pptx", "xlsx")
+    # Fase 9.5: agregamos `md` y `markdown` para que las sesiones de
+    # documentación puedan empujar sus `.md` al pipeline de ingesta.
+    assert d.supported_extensions == (
+        "docx",
+        "markdown",
+        "md",
+        "pdf",
+        "pptx",
+        "xlsx",
+    )
 
 
 @pytest.mark.parametrize(

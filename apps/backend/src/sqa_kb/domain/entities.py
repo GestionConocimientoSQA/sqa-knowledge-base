@@ -37,6 +37,8 @@ from sqa_kb.domain.value_objects import (
     CategoryCode,
     DocStatus,
     DocTypeCode,
+    DocumentationSessionStatus,
+    DocumentationStep,
     IngestionStatus,
     MessageRole,
     MessageStatus,
@@ -451,6 +453,46 @@ class EffectiveTaxonomy(_Base):
     project_id: NonEmptyStr
     categories: list[EffectiveCategoryEntry]
     doc_types: list[EffectiveDocTypeEntry]
+
+
+# ===========================================================================
+# Sesiones de documentación con el agente (Fase 9.5)
+# ===========================================================================
+
+
+class DocumentationSession(_Base):
+    """Sesión guiada de captura del conocimiento del cliente (Fase 9.5).
+
+    El `project_owner` la inicia al onboardear un proyecto nuevo y va
+    completando los steps (`DocumentationStep`) con el agente. Cada
+    step queda persistido en `step_data` para resumir sin perder progreso.
+
+    Al `finalize`, las respuestas se compilan en documentos `.md` que
+    entran al pipeline de ingesta del proyecto — semilla del knowledge.
+
+    Diseño minimalista (no LangGraph todavía): un workflow lineal con
+    state en DB. Si en el futuro requiere streaming SSE o orchestration
+    compleja, se migra a un subgrafo. La interfaz del servicio queda
+    estable.
+    """
+
+    id: NonEmptyStr
+    project_id: NonEmptyStr
+    owner_oid: NonEmptyStr
+    """OID del usuario que abrió la sesión (típicamente el `project_owner`).
+    GK Lead también puede abrirla en modo override."""
+    status: DocumentationSessionStatus
+    current_step: DocumentationStep
+    """Step actual del workflow. Avanza al siguiente con `submit_step`."""
+    step_data: dict[str, Any] = Field(default_factory=dict)
+    """Mapa `step_name → respuesta`. La forma del payload por step la valida
+    el servicio (ver `DocumentationStepPayload`)."""
+    started_at: datetime
+    finalized_at: datetime | None = None
+    generated_document_ids: list[NonEmptyStr] = Field(default_factory=list)
+    """IDs de los IngestionItems creados al `finalize` — uno por step
+    completado. El `project_owner` puede aprobar cada uno con
+    trazabilidad estándar."""
 
 
 # ===========================================================================

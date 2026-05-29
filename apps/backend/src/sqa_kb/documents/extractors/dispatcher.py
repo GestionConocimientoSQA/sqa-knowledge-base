@@ -11,6 +11,7 @@ from pathlib import PurePosixPath
 
 from sqa_kb.documents.extractors.base import DocumentExtractor, ExtractedDocument
 from sqa_kb.documents.extractors.docx import DocxExtractor
+from sqa_kb.documents.extractors.markdown import MarkdownExtractor
 from sqa_kb.documents.extractors.pdf import PdfExtractor
 from sqa_kb.documents.extractors.pptx import PptxExtractor
 from sqa_kb.documents.extractors.xlsx import XlsxExtractor
@@ -35,6 +36,7 @@ class ExtractorDispatcher:
             PptxExtractor(),
             PdfExtractor(),
             XlsxExtractor(),
+            MarkdownExtractor(),
         ]
         # Mapa extensión → extractor (la última registrada gana si colisionan).
         self._by_ext: dict[str, DocumentExtractor] = {}

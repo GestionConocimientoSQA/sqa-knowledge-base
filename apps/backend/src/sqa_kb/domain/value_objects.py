@@ -166,3 +166,53 @@ class ActivityType(StrEnum):
     INGESTA = "ingesta"
     CONSULTA = "consulta"
     TAXONOMIA = "taxonomia"
+
+
+class DocumentationStep(StrEnum):
+    """Steps del workflow de sesión de documentación (Fase 9.5).
+
+    Cada step le pregunta al `project_owner` por un área concreta del
+    conocimiento del cliente. Las respuestas se acumulan en el state de
+    la sesión y al finalizar se materializan en documentos `.md` que
+    entran al pipeline de ingesta del proyecto.
+
+    Orden fijo para que el flujo guiado sea predecible. El servicio
+    valida transiciones (no se puede saltar al step 3 sin completar 1 y 2).
+    """
+
+    CONTEXT = "context"
+    """Step 1 — Contexto del cliente: industria, regulación, glosario inicial."""
+
+    TAXONOMY = "taxonomy"
+    """Step 2 — Taxonomía del proyecto: categorías/tipos que necesita."""
+
+    SOURCES = "sources"
+    """Step 3 — Fuentes de información: SharePoint, Drive, repos, etc."""
+
+    GLOSSARY = "glossary"
+    """Step 4 — Términos clave y sinónimos (alimenta FTS y chunking)."""
+
+    STAKEHOLDERS = "stakeholders"
+    """Step 5 — Stakeholders y aprobadores por tipo de doc."""
+
+
+DOCUMENTATION_STEP_ORDER: list[DocumentationStep] = [
+    DocumentationStep.CONTEXT,
+    DocumentationStep.TAXONOMY,
+    DocumentationStep.SOURCES,
+    DocumentationStep.GLOSSARY,
+    DocumentationStep.STAKEHOLDERS,
+]
+
+
+class DocumentationSessionStatus(StrEnum):
+    """Estado de la sesión de documentación."""
+
+    IN_PROGRESS = "in-progress"
+    """Hay un step pendiente o se está completando."""
+
+    FINALIZED = "finalized"
+    """Todos los steps completos; docs generados y enviados a ingesta."""
+
+    ABANDONED = "abandoned"
+    """El `project_owner` la canceló antes de finalizar."""
