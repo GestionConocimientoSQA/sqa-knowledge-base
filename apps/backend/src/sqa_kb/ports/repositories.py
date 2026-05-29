@@ -30,6 +30,8 @@ from sqa_kb.domain.entities import (
     IngestionItem,
     Message,
     MyCapturesStats,
+    Project,
+    ProjectMember,
     Query,
     QueryCitation,
     RecentActivityItem,
@@ -48,6 +50,53 @@ from sqa_kb.domain.value_objects import (
 
 
 @runtime_checkable
+class ProjectRepository(Protocol):
+    """Persistencia de proyectos + membresías (Fase 9.2).
+
+    El servicio que orquesta esto (`ProjectService`) hace los checks de
+    autorización ANTES de delegar — el repo no enforce permisos, solo
+    expone CRUD limpio. La razón: las decisiones de quién puede ver/editar
+    qué dependen del rol global + membership, y eso es lógica de servicio.
+    """
+
+    async def create(self, project: Project) -> Project: ...
+
+    async def get(self, project_id: str) -> Project | None: ...
+
+    async def get_by_slug(self, slug: str) -> Project | None: ...
+
+    async def list_all(self) -> Sequence[Project]: ...
+    """Lista todos los proyectos sin filtro (uso `gk_lead`)."""
+
+    async def list_for_user(self, user_oid: str) -> Sequence[Project]: ...
+    """Proyectos donde el usuario es miembro (cualquier rol)."""
+
+    async def update(self, project: Project) -> Project: ...
+
+    async def archive(self, project_id: str) -> Project: ...
+    """Soft-delete: setea `archived_at = now()`. El proyecto queda
+    read-only pero no se borra (queremos preservar el knowledge)."""
+
+    # --- Memberships ---
+
+    async def add_member(self, member: ProjectMember) -> ProjectMember: ...
+    """Idempotente: si el `(project_id, user_oid)` ya existe, actualiza
+    el `role` y devuelve la fila resultante."""
+
+    async def remove_member(self, project_id: str, user_oid: str) -> None: ...
+    """No-op si el miembro no existe."""
+
+    async def list_members(self, project_id: str) -> Sequence[ProjectMember]: ...
+
+    async def get_membership(
+        self, project_id: str, user_oid: str
+    ) -> ProjectMember | None: ...
+    """Devuelve la membresía concreta del usuario en el proyecto.
+    `None` si no es miembro. Usado por `PermissionPolicy` para construir
+    el `ProjectMembership` derivado."""
+
+
+@runtime_checkable
 class UserRepository(Protocol):
     """Espejo del catálogo de usuarios. La creación/actualización se hace
     desde el JWT de Entra ID (o el dev provider en local) — no hay un
@@ -59,6 +108,10 @@ class UserRepository(Protocol):
     el role o las carpetas owned."""
 
     async def get_by_oid(self, oid: str) -> User | None: ...
+
+    async def get_by_email(self, email: str) -> User | None: ...
+    """Lookup por email — usado al designar `project_owner` de un proyecto
+    nuevo (el GK Lead provee el email del invitado, no su OID)."""
 
     async def list_by_role(self, role: str, *, limit: int = 50) -> Sequence[User]: ...
 

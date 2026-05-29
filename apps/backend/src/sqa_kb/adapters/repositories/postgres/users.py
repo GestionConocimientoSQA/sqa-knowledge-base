@@ -37,6 +37,18 @@ class PostgresUserRepository:
             model = await session.get(models.UserModel, oid)
             return mappers.to_user_entity(model) if model else None
 
+    async def get_by_email(self, email: str) -> User | None:
+        """Lookup case-insensitive (los emails normalmente vienen tal cual
+        del JWT pero los buscadores los pueden ingresar con mayúsculas)."""
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(models.UserModel).where(
+                    models.UserModel.email.ilike(email)
+                )
+            )
+            model = result.scalar_one_or_none()
+            return mappers.to_user_entity(model) if model else None
+
     async def list_by_role(self, role: str, *, limit: int = 50) -> Sequence[User]:
         async with self._session_factory() as session:
             result = await session.execute(

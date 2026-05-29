@@ -48,6 +48,9 @@ from sqa_kb.adapters.repositories.postgres.documents import (
 from sqa_kb.adapters.repositories.postgres.ingestion import (
     PostgresIngestionRepository,
 )
+from sqa_kb.adapters.repositories.postgres.projects import (
+    PostgresProjectRepository,
+)
 from sqa_kb.adapters.repositories.postgres.queries import (
     PostgresQueryRepository,
 )
@@ -68,6 +71,7 @@ from sqa_kb.api.health import register_health_check
 from sqa_kb.api.health import router as health_router
 from sqa_kb.api.ingestion import router as ingestion_router
 from sqa_kb.api.messages import router as messages_router
+from sqa_kb.api.projects import router as projects_router
 from sqa_kb.api.queries import router as queries_router
 from sqa_kb.api.sessions import router as sessions_router
 from sqa_kb.api.sse import SseEventBuffer
@@ -80,6 +84,7 @@ from sqa_kb.observability.logging import configure_logging, get_logger
 from sqa_kb.rag.hybrid_search import HybridSearcher
 from sqa_kb.rag.indexer import Indexer
 from sqa_kb.services.ingestion_service import IngestionService
+from sqa_kb.services.project_service import ProjectService
 
 
 def _wire_persistence(app: FastAPI, settings: Settings) -> None:
@@ -103,6 +108,11 @@ def _wire_persistence(app: FastAPI, settings: Settings) -> None:
     app.state.session_repo = PostgresSessionRepository(factory)
     app.state.document_repo = PostgresDocumentRepository(factory)
     app.state.ingestion_repo = PostgresIngestionRepository(factory)
+    app.state.project_repo = PostgresProjectRepository(factory)
+    app.state.project_service = ProjectService(
+        project_repo=app.state.project_repo,
+        user_repo=user_repo,
+    )
     app.state.query_repo = PostgresQueryRepository(factory)
     app.state.taxonomy_repo = PostgresTaxonomyRepository(factory)
     app.state.skill_repo = PostgresSkillRepository(factory)
@@ -370,6 +380,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router)
     app.include_router(queries_router)
     app.include_router(ingestion_router)
+    app.include_router(projects_router)
 
     @app.get("/", tags=["root"])
     async def root() -> dict[str, str]:

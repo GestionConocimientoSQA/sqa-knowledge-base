@@ -24,6 +24,7 @@ from sqa_kb.ports.repositories import (
     AuditLogRepository,
     DocumentRepository,
     IngestionRepository,
+    ProjectRepository,
     QueryRepository,
     SessionRepository,
     SkillRepository,
@@ -59,6 +60,7 @@ get_user_repo = _from_state("user_repo")
 get_session_repo = _from_state("session_repo")
 get_document_repo = _from_state("document_repo")
 get_ingestion_repo = _from_state("ingestion_repo")
+get_project_repo = _from_state("project_repo")
 get_query_repo = _from_state("query_repo")
 get_taxonomy_repo = _from_state("taxonomy_repo")
 get_skill_repo = _from_state("skill_repo")
@@ -109,6 +111,7 @@ UserRepoDep = Annotated[UserRepository, Depends(get_user_repo)]
 SessionRepoDep = Annotated[SessionRepository, Depends(get_session_repo)]
 DocumentRepoDep = Annotated[DocumentRepository, Depends(get_document_repo)]
 IngestionRepoDep = Annotated[IngestionRepository, Depends(get_ingestion_repo)]
+ProjectRepoDep = Annotated[ProjectRepository, Depends(get_project_repo)]
 QueryRepoDep = Annotated[QueryRepository, Depends(get_query_repo)]
 TaxonomyRepoDep = Annotated[TaxonomyRepository, Depends(get_taxonomy_repo)]
 SkillRepoDep = Annotated[SkillRepository, Depends(get_skill_repo)]
@@ -135,3 +138,10 @@ get_ingestion_service = _from_state("ingestion_service")
 from sqa_kb.services.ingestion_service import IngestionService  # noqa: E402
 
 IngestionServiceDep = Annotated[IngestionService, Depends(get_ingestion_service)]
+
+# ProjectService para `/projects` (Fase 9.2). Se cablea en main.py.
+get_project_service = _from_state("project_service")
+
+from sqa_kb.services.project_service import ProjectService  # noqa: E402
+
+ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
