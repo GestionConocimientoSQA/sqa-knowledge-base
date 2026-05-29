@@ -48,6 +48,9 @@ from sqa_kb.adapters.repositories.postgres.documents import (
 from sqa_kb.adapters.repositories.postgres.ingestion import (
     PostgresIngestionRepository,
 )
+from sqa_kb.adapters.repositories.postgres.project_taxonomy import (
+    PostgresProjectTaxonomyRepository,
+)
 from sqa_kb.adapters.repositories.postgres.projects import (
     PostgresProjectRepository,
 )
@@ -71,6 +74,7 @@ from sqa_kb.api.health import register_health_check
 from sqa_kb.api.health import router as health_router
 from sqa_kb.api.ingestion import router as ingestion_router
 from sqa_kb.api.messages import router as messages_router
+from sqa_kb.api.project_taxonomy import router as project_taxonomy_router
 from sqa_kb.api.projects import router as projects_router
 from sqa_kb.api.queries import router as queries_router
 from sqa_kb.api.sessions import router as sessions_router
@@ -85,6 +89,7 @@ from sqa_kb.rag.hybrid_search import HybridSearcher
 from sqa_kb.rag.indexer import Indexer
 from sqa_kb.services.ingestion_service import IngestionService
 from sqa_kb.services.project_service import ProjectService
+from sqa_kb.services.project_taxonomy_service import ProjectTaxonomyService
 
 
 def _wire_persistence(app: FastAPI, settings: Settings) -> None:
@@ -109,12 +114,18 @@ def _wire_persistence(app: FastAPI, settings: Settings) -> None:
     app.state.document_repo = PostgresDocumentRepository(factory)
     app.state.ingestion_repo = PostgresIngestionRepository(factory)
     app.state.project_repo = PostgresProjectRepository(factory)
+    app.state.project_taxonomy_repo = PostgresProjectTaxonomyRepository(factory)
     app.state.project_service = ProjectService(
         project_repo=app.state.project_repo,
         user_repo=user_repo,
     )
     app.state.query_repo = PostgresQueryRepository(factory)
     app.state.taxonomy_repo = PostgresTaxonomyRepository(factory)
+    app.state.project_taxonomy_service = ProjectTaxonomyService(
+        project_repo=app.state.project_repo,
+        taxonomy_repo=app.state.taxonomy_repo,
+        project_taxonomy_repo=app.state.project_taxonomy_repo,
+    )
     app.state.skill_repo = PostgresSkillRepository(factory)
     app.state.audit_repo = PostgresAuditLogRepository(factory)
     app.state.activity_repo = PostgresActivityRepository(factory)
@@ -381,6 +392,7 @@ def create_app() -> FastAPI:
     app.include_router(queries_router)
     app.include_router(ingestion_router)
     app.include_router(projects_router)
+    app.include_router(project_taxonomy_router)
 
     @app.get("/", tags=["root"])
     async def root() -> dict[str, str]:

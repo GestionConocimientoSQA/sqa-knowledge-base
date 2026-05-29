@@ -31,6 +31,8 @@ from sqa_kb.domain.entities import (
     Message,
     MyCapturesStats,
     Project,
+    ProjectCategory,
+    ProjectDocType,
     ProjectMember,
     Query,
     QueryCitation,
@@ -94,6 +96,34 @@ class ProjectRepository(Protocol):
     """Devuelve la membresía concreta del usuario en el proyecto.
     `None` si no es miembro. Usado por `PermissionPolicy` para construir
     el `ProjectMembership` derivado."""
+
+
+@runtime_checkable
+class ProjectTaxonomyRepository(Protocol):
+    """Persistencia de overrides + extensiones de taxonomía por proyecto
+    (Fase 9.4).
+
+    El catálogo global vive en `TaxonomyRepository`. Este repo solo
+    expone las modificaciones per-proyecto (delta sobre el global). El
+    merge final lo orquesta `ProjectTaxonomyService.effective(...)`.
+    """
+
+    async def list_categories(self, project_id: str) -> Sequence[ProjectCategory]: ...
+
+    async def list_doc_types(self, project_id: str) -> Sequence[ProjectDocType]: ...
+
+    async def upsert_category(self, category: ProjectCategory) -> ProjectCategory: ...
+    """Idempotente: si `(project_id, code)` ya existe, reemplaza label
+    + is_override. El `project_owner` lo invoca para agregar override
+    o extensión."""
+
+    async def upsert_doc_type(self, doc_type: ProjectDocType) -> ProjectDocType: ...
+
+    async def delete_category(self, project_id: str, code: str) -> None: ...
+    """Elimina un override / extensión. Si era override (is_override=True)
+    el global vuelve a estar vigente; si era extensión, desaparece."""
+
+    async def delete_doc_type(self, project_id: str, code: str) -> None: ...
 
 
 @runtime_checkable

@@ -145,3 +145,14 @@ get_project_service = _from_state("project_service")
 from sqa_kb.services.project_service import ProjectService  # noqa: E402
 
 ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
+
+# ProjectTaxonomyService para `/projects/{id}/taxonomy` (Fase 9.4).
+get_project_taxonomy_service = _from_state("project_taxonomy_service")
+
+from sqa_kb.services.project_taxonomy_service import (  # noqa: E402
+    ProjectTaxonomyService,
+)
+
+ProjectTaxonomyServiceDep = Annotated[
+    ProjectTaxonomyService, Depends(get_project_taxonomy_service)
+]

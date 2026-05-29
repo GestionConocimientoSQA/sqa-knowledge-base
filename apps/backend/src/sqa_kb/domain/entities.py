@@ -374,6 +374,86 @@ class DocType(_Base):
 
 
 # ===========================================================================
+# Taxonomía por proyecto (Fase 9.4)
+# ===========================================================================
+
+
+class ProjectCategory(_Base):
+    """Override / extensión per-proyecto del catálogo global de carpetas.
+
+    Dos modos:
+    - `is_override=True`: el `code` coincide con uno global y se reemplaza
+      el `label` para este proyecto.
+    - `is_override=False`: el `code` es nuevo (no existe en el global) —
+      extensión exclusiva del proyecto.
+
+    En ambos casos, `parent_global_code` puede apuntar a un global como
+    referencia (útil cuando una extensión "deriva" de una categoría global).
+    """
+
+    project_id: NonEmptyStr
+    code: NonEmptyStr
+    """Código de carpeta — puede ser un código global (override) o uno
+    nuevo (extensión)."""
+    label: NonEmptyStr
+    parent_global_code: str | None = None
+    is_override: bool = False
+
+
+class ProjectDocType(_Base):
+    """Override / extensión per-proyecto del catálogo global de tipos."""
+
+    project_id: NonEmptyStr
+    code: NonEmptyStr
+    label: NonEmptyStr
+    parent_global_code: str | None = None
+    is_override: bool = False
+
+
+class EffectiveCategoryEntry(_Base):
+    """Entrada del catálogo efectivo de carpetas (Fase 9.4).
+
+    Diferencia con `Category`: `code` es `str` plano (no `CategoryCode`)
+    para admitir extensiones per-proyecto con códigos fuera del enum
+    global. Los counters quedan en 0 para entradas extension — el
+    refresh global no las cuenta."""
+
+    code: NonEmptyStr
+    label: NonEmptyStr
+    docs: int = Field(ge=0, default=0)
+    vigentes: int = Field(ge=0, default=0)
+    autoritativos: int = Field(ge=0, default=0)
+    score_avg: float = Field(ge=0.0, le=5.0, default=0.0)
+    obsolescencia: int = Field(ge=0, default=0)
+    is_project_extension: bool = False
+    """True si la entrada no existe en el catálogo global (es exclusiva
+    del proyecto)."""
+
+
+class EffectiveDocTypeEntry(_Base):
+    """Entrada del catálogo efectivo de tipos."""
+
+    code: NonEmptyStr
+    label: NonEmptyStr
+    is_project_extension: bool = False
+
+
+class EffectiveTaxonomy(_Base):
+    """Vista derivada (sin persistir) del catálogo efectivo de un proyecto.
+
+    Resulta de mergear el catálogo global con los overrides + extensiones
+    del proyecto. La construye `ProjectTaxonomyService.effective(...)`.
+
+    El frontend lo consume para poblar selectores (carpeta / tipo) en el
+    formulario de aprobación de ingesta y en el classifier del agente.
+    """
+
+    project_id: NonEmptyStr
+    categories: list[EffectiveCategoryEntry]
+    doc_types: list[EffectiveDocTypeEntry]
+
+
+# ===========================================================================
 # Documentos del KB
 # ===========================================================================
 
