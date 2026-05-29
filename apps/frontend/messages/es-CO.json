@@ -28,6 +28,7 @@
     "explorer": "Catálogo",
     "myCaptures": "Mis capturas",
     "admin": "Taxonomía y roles",
+    "projects": "Proyectos",
     "mySessions": "Mis sesiones",
     "seeAll": "Ver todo",
     "activeAgent": "Agente activo"
@@ -39,7 +40,8 @@
       "chatStart": "Iniciar conversación",
       "ingestion": "Cola de ingesta",
       "explorer": "Catálogo",
-      "admin": "Taxonomía y gobierno"
+      "admin": "Taxonomía y gobierno",
+      "projects": "Proyectos"
     },
     "openMenu": "Menú de usuario",
     "toggleTheme": "Cambiar tema",

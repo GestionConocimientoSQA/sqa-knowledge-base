@@ -15,6 +15,7 @@ import { DocumentActionsBar } from "@/components/explorer/document-actions-bar";
 import { DocumentPreviewPlaceholder } from "@/components/explorer/document-preview-placeholder";
 import { IncomingCitationsPanel } from "@/components/explorer/incoming-citations-panel";
 import { getDocumentDetail } from "@/lib/api/documents";
+import { docTypeLabel } from "@/lib/taxonomy";
 
 interface DocumentDetailPageProps {
   params: Promise<{ docId: string }>;
@@ -96,7 +97,7 @@ export default function DocumentDetailPage({ params }: DocumentDetailPageProps) 
         <span aria-hidden>/</span>
         <span className="font-mono">{doc.carpeta}</span>
         <span aria-hidden>·</span>
-        <span className="font-mono">{doc.tipo}</span>
+        <span title={doc.tipo}>{docTypeLabel(doc.tipo)}</span>
       </div>
 
       {/* Header */}
@@ -106,8 +107,8 @@ export default function DocumentDetailPage({ params }: DocumentDetailPageProps) 
             <Badge variant="outline" className="font-mono">
               {doc.carpeta}
             </Badge>
-            <Badge variant="secondary" className="font-mono">
-              {doc.tipo}
+            <Badge variant="secondary" title={doc.tipo}>
+              {docTypeLabel(doc.tipo)}
             </Badge>
             {doc.autoritativo && (
               <Badge variant="authoritative">

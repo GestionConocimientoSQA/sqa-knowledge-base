@@ -10,6 +10,10 @@ interface FilterChipProps {
   onClick: () => void;
   /** Identifica el filtro semánticamente para lectores de pantalla. */
   ariaLabel?: string;
+  /** True ⇒ render `label` con `font-mono` (códigos cortos como `PROC`).
+   * Default `true` para back-compat con carpetas. Tipos lo pasan en
+   * `false` para mostrar el nombre completo legible. */
+  monospaceLabel?: boolean;
   className?: string;
 }
 
@@ -24,6 +28,7 @@ export function FilterChip({
   active,
   onClick,
   ariaLabel,
+  monospaceLabel = true,
   className,
 }: FilterChipProps) {
   return (
@@ -41,7 +46,7 @@ export function FilterChip({
         className,
       )}
     >
-      <span className="font-mono">{label}</span>
+      <span className={monospaceLabel ? "font-mono" : undefined}>{label}</span>
       {sub && <span className="text-muted-foreground">{sub}</span>}
     </button>
   );

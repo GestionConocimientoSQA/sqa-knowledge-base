@@ -4,6 +4,7 @@ import Link from "next/link";
 import { BadgeCheck, EyeOff, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { docTypeLabel } from "@/lib/taxonomy";
 import type { DocumentItem } from "@/types/domain";
 
 interface DocumentCardProps {
@@ -26,8 +27,8 @@ export function DocumentCard({ document: d }: DocumentCardProps) {
           <Badge variant="outline" className="font-mono">
             {d.carpeta}
           </Badge>
-          <Badge variant="secondary" className="font-mono">
-            {d.tipo}
+          <Badge variant="secondary" title={d.tipo}>
+            {docTypeLabel(d.tipo)}
           </Badge>
           {d.autoritativo && (
             <Badge variant="authoritative">

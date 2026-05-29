@@ -11,10 +11,12 @@ import {
   Inbox,
   LibraryBig,
   BookUser,
+  FolderKanban,
   Settings2,
   Settings,
   type LucideIcon,
 } from "lucide-react";
+import type { RoleId } from "@/types/domain";
 import { cn } from "@/lib/utils";
 import { SqaLogo } from "@/components/brand/sqa-logo";
 import { AriaMascot } from "@/components/brand/aria-mascot";
@@ -37,6 +39,11 @@ interface NavItem {
    * cae a `pathname.startsWith(href)`.
    */
   activeWhen?: (pathname: string, search: URLSearchParams) => boolean;
+  /**
+   * Si está, el item solo se muestra cuando el `roleId` del usuario está
+   * en la lista. Default: visible para todos.
+   */
+  visibleForRoles?: readonly RoleId[];
 }
 
 interface NavGroup {
@@ -76,7 +83,25 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     labelKey: "groupGovernance",
-    items: [{ id: "admin", labelKey: "admin", icon: Settings2, href: "/admin" }],
+    items: [
+      {
+        id: "projects",
+        labelKey: "projects",
+        icon: FolderKanban,
+        href: "/admin/projects",
+        visibleForRoles: ["gklead"],
+        activeWhen: (p) => p.startsWith("/admin/projects"),
+      },
+      {
+        id: "admin",
+        labelKey: "admin",
+        icon: Settings2,
+        href: "/admin",
+        // Sin la condición exacta, "/admin/projects" también activaría
+        // este item — los excluímos explícitamente.
+        activeWhen: (p) => p === "/admin",
+      },
+    ],
   },
 ];
 
@@ -157,7 +182,13 @@ export function Sidebar() {
                 {tNav(group.labelKey)}
               </div>
             )}
-            {group.items.map((item) => {
+            {group.items
+              .filter((item) => {
+                if (!item.visibleForRoles) return true;
+                if (!user) return false;
+                return item.visibleForRoles.includes(user.roleId);
+              })
+              .map((item) => {
               const active = item.activeWhen
                 ? item.activeWhen(pathname, searchParams)
                 : pathname.startsWith(item.href);

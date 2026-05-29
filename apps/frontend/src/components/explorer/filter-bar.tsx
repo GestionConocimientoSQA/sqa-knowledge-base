@@ -124,7 +124,8 @@ export function FilterBar({
           {DOC_TYPES.map((t) => (
             <FilterChip
               key={t.code}
-              label={t.code}
+              label={t.label}
+              monospaceLabel={false}
               active={tiposActive.has(t.code)}
               ariaLabel={`Tipo ${t.label} (${t.code})`}
               onClick={() =>
