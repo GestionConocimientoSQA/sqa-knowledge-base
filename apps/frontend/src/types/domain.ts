@@ -14,6 +14,27 @@ export type RoleId = "capturador" | "owner" | "gklead";
 /** Rol per-proyecto (Fase 9). Wired completo en 9.6/9.7/9.8. */
 export type ProjectMemberRole = "project_owner" | "member";
 
+// === Proyectos multi-tenant (Fase 9) ===
+
+/** Proyecto del KB. Cada proyecto tiene su propio knowledge aislado. */
+export interface Project {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  ownerOid: string;
+  createdAt: string;
+  archivedAt: string | null;
+}
+
+/** Membresía usuario↔proyecto. */
+export interface ProjectMember {
+  projectId: string;
+  userOid: string;
+  role: ProjectMemberRole;
+  addedAt: string;
+}
+
 export interface Role {
   id: RoleId;
   label: string;
