@@ -436,8 +436,13 @@ async def test_activity_recent_returns_empty_initially(session_factory) -> None:
 
 async def test_ingestion_create_and_list_pending(session_factory) -> None:  # type: ignore[no-untyped-def]
     repo = PostgresIngestionRepository(session_factory)
+    from sqa_kb.adapters.repositories.postgres.mappers import (
+        GK_GENERAL_PROJECT_ID,
+    )
+
     item = IngestionItem(
         id=_unique("ing"),
+        project_id=GK_GENERAL_PROJECT_ID,
         filename="test.docx",
         size_bytes=1024,
         paginas=3,

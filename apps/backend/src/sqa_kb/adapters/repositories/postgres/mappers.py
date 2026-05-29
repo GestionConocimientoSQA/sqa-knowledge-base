@@ -113,6 +113,7 @@ def to_doc_type_entity(model: models.DocTypeModel) -> entities.DocType:
 def to_document_entity(model: models.DocumentModel) -> entities.Document:
     return entities.Document(
         id=model.id,
+        project_id=model.project_id,
         titulo=model.titulo,
         carpeta=CategoryCode(model.carpeta),
         tipo=DocTypeCode(model.tipo),
@@ -153,9 +154,12 @@ def new_document_model(
     entity: entities.Document,
     project_id: str = GK_GENERAL_PROJECT_ID,
 ) -> models.DocumentModel:
+    # Si el entity ya trae `project_id`, lo respetamos; si no, fallback
+    # al proyecto raíz (legacy / tests pre-9.3).
+    effective_project_id = entity.project_id or project_id
     return models.DocumentModel(
         id=entity.id,
-        project_id=project_id,
+        project_id=effective_project_id,
         titulo=entity.titulo,
         carpeta=str(entity.carpeta),
         tipo=str(entity.tipo),
@@ -293,6 +297,7 @@ def new_message_model(entity: entities.Message) -> models.MessageModel:
 def to_ingestion_entity(model: models.IngestionItemModel) -> entities.IngestionItem:
     return entities.IngestionItem(
         id=model.id,
+        project_id=model.project_id,
         filename=model.filename,
         size_bytes=model.size_bytes,
         paginas=model.paginas,
@@ -315,11 +320,13 @@ def to_ingestion_entity(model: models.IngestionItemModel) -> entities.IngestionI
 
 def new_ingestion_model(
     entity: entities.IngestionItem,
-    project_id: str = GK_GENERAL_PROJECT_ID,
 ) -> models.IngestionItemModel:
+    """El `project_id` viene del entity (Fase 9.3) — antes había un default
+    `gk-general` aquí mientras el wiring no lo cableaba; ahora es
+    siempre obligatorio en la entity."""
     return models.IngestionItemModel(
         id=entity.id,
-        project_id=project_id,
+        project_id=entity.project_id,
         filename=entity.filename,
         size_bytes=entity.size_bytes,
         paginas=entity.paginas,

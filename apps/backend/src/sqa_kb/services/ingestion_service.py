@@ -116,9 +116,15 @@ class IngestionService:
         filename: str,
         data: bytes,
         uploaded_by_oid: str,
+        project_id: str,
         source_origin: str = "",
     ) -> IngestionItem:
         """Valida + sube el archivo al Blob + crea el IngestionItem.
+
+        `project_id` es obligatorio desde Fase 9.3 — el item queda asociado
+        al proyecto para que el `project_owner` lo apruebe y el doc final
+        herede el scoping. El caller (endpoint) valida la membership antes
+        de invocar.
 
         Lanza `ValidationError` si el archivo es muy grande o el formato
         no tiene extractor.
@@ -145,6 +151,7 @@ class IngestionService:
         )
         item = IngestionItem(
             id=item_id,
+            project_id=project_id,
             filename=filename,
             size_bytes=len(data),
             status=IngestionStatus.PENDIENTE_METADATA,
@@ -231,6 +238,7 @@ class IngestionService:
         )
         document = Document(
             id=document_id,
+            project_id=item.project_id,
             titulo=title,
             carpeta=traceability.category,
             tipo=traceability.document_type,

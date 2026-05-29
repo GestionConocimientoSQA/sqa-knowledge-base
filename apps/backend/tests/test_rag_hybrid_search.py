@@ -153,7 +153,7 @@ async def test_search_embeds_query_and_returns_hybrid_chunks() -> None:
     )
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    chunks = await searcher.search("playwright e2e")
+    chunks = await searcher.search("playwright e2e", project_id="proj-test")
 
     assert embedder.queries_seen == ["playwright e2e"]
     assert len(chunks) == 1
@@ -171,7 +171,7 @@ async def test_search_sql_contains_both_ctes() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q")
+    await searcher.search("q", project_id="proj-test")
     sql = factory.captured[0].sql
 
     assert "vector_results AS" in sql
@@ -189,7 +189,7 @@ async def test_search_sql_uses_spanish_plainto_tsquery() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q")
+    await searcher.search("q", project_id="proj-test")
     sql = factory.captured[0].sql
 
     assert "to_tsvector('spanish', c.content)" in sql
@@ -202,7 +202,7 @@ async def test_search_uses_ts_rank_cd_with_normalization_flag_32() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q")
+    await searcher.search("q", project_id="proj-test")
     # Normalizamos whitespace para que el SQL multilínea matchee igual
     # que single-line.
     sql_flat = " ".join(factory.captured[0].sql.split())
@@ -223,7 +223,7 @@ async def test_search_top_k_zero_returns_empty_without_embedding() -> None:
     factory = _FakeSessionFactory(rows=[_row()])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    out = await searcher.search("q", top_k=0)
+    out = await searcher.search("q", project_id="proj-test", top_k=0)
     assert out == []
     assert embedder.queries_seen == []
     assert factory.captured == []
@@ -236,7 +236,7 @@ async def test_search_empty_query_returns_empty_without_embedding() -> None:
     factory = _FakeSessionFactory(rows=[_row()])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    out = await searcher.search("")
+    out = await searcher.search("", project_id="proj-test")
     assert out == []
     assert embedder.queries_seen == []
 
@@ -246,7 +246,7 @@ async def test_search_whitespace_only_query_returns_empty() -> None:
     factory = _FakeSessionFactory(rows=[_row()])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    out = await searcher.search("   \t\n  ")
+    out = await searcher.search("   \t\n  ", project_id="proj-test")
     assert out == []
     assert embedder.queries_seen == []
 
@@ -256,7 +256,7 @@ async def test_search_handles_embedder_returning_empty_vectors() -> None:
     factory = _FakeSessionFactory(rows=[_row()])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    out = await searcher.search("q")
+    out = await searcher.search("q", project_id="proj-test")
     assert out == []
     assert factory.captured == []
 
@@ -266,7 +266,7 @@ async def test_search_no_rows_returns_empty() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    out = await searcher.search("nada matchea")
+    out = await searcher.search("nada matchea", project_id="proj-test")
     assert out == []
     assert len(factory.captured) == 1
 
@@ -281,7 +281,7 @@ async def test_search_default_weights_passed_as_params() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q")
+    await searcher.search("q", project_id="proj-test")
     p = factory.captured[0].params
 
     assert p["vec_weight"] == pytest.approx(DEFAULT_VECTOR_WEIGHT)
@@ -300,7 +300,7 @@ async def test_search_custom_weights_at_construction() -> None:
         fts_weight=0.5,
     )
 
-    await searcher.search("q")
+    await searcher.search("q", project_id="proj-test")
     p = factory.captured[0].params
     assert p["vec_weight"] == pytest.approx(0.5)
     assert p["fts_weight"] == pytest.approx(0.5)
@@ -313,7 +313,7 @@ async def test_search_custom_candidates_at_construction() -> None:
         embedder=embedder, session_factory=factory, candidates_per_branch=100
     )
 
-    await searcher.search("q")
+    await searcher.search("q", project_id="proj-test")
     assert factory.captured[0].params["candidates"] == 100
 
 
@@ -322,7 +322,7 @@ async def test_search_boost_override_per_call() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q", authoritative_boost=1.5)
+    await searcher.search("q", project_id="proj-test", authoritative_boost=1.5)
     assert factory.captured[0].params["boost"] == pytest.approx(1.5)
 
 
@@ -331,7 +331,7 @@ async def test_search_top_k_propagates_to_sql() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q", top_k=12)
+    await searcher.search("q", project_id="proj-test", top_k=12)
     assert factory.captured[0].params["top_k"] == 12
 
 
@@ -347,7 +347,7 @@ async def test_search_carpetas_filter_applied_in_both_ctes() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q", carpetas=["TEC", "ARQ"])
+    await searcher.search("q", project_id="proj-test", carpetas=["TEC", "ARQ"])
     sql = factory.captured[0].sql
 
     # El filtro debe aparecer 2 veces (una por CTE).
@@ -362,7 +362,7 @@ async def test_search_tipos_filter_applied_in_both_ctes() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q", tipos=["POL"])
+    await searcher.search("q", project_id="proj-test", tipos=["POL"])
     sql = factory.captured[0].sql
 
     assert sql.count("d.tipo IN") == 2
@@ -374,7 +374,7 @@ async def test_search_authoritative_only_applied_in_both_ctes() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q", authoritative_only=True)
+    await searcher.search("q", project_id="proj-test", authoritative_only=True)
     sql = factory.captured[0].sql
 
     assert sql.count("d.autoritativo = TRUE") == 2
@@ -386,7 +386,7 @@ async def test_search_empty_filter_lists_no_filter_clause() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q", carpetas=[], tipos=[])
+    await searcher.search("q", project_id="proj-test", carpetas=[], tipos=[])
     sql = factory.captured[0].sql
     assert "d.carpeta IN" not in sql
     assert "d.tipo IN" not in sql
@@ -398,7 +398,7 @@ async def test_search_no_filters_keeps_base_predicates() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q")
+    await searcher.search("q", project_id="proj-test")
     sql = factory.captured[0].sql
     assert "c.embedding IS NOT NULL" in sql
     assert "@@ plainto_tsquery" in sql
@@ -414,7 +414,7 @@ async def test_search_qvec_serialized_as_pgvector_literal() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q")
+    await searcher.search("q", project_id="proj-test")
     p = factory.captured[0].params
     assert isinstance(p["qvec"], str)
     assert p["qvec"].startswith("[") and p["qvec"].endswith("]")
@@ -427,7 +427,7 @@ async def test_search_query_text_passed_as_bind_param() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("playwright '; DROP TABLE documents;--")
+    await searcher.search("playwright '; DROP TABLE documents;--", project_id="proj-test")
     sql = factory.captured[0].sql
     # No hay concatenación del input al SQL.
     assert "DROP TABLE" not in sql
@@ -444,7 +444,7 @@ async def test_search_boost_applied_in_combined_score() -> None:
     factory = _FakeSessionFactory(rows=[])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    await searcher.search("q")
+    await searcher.search("q", project_id="proj-test")
     sql = factory.captured[0].sql
 
     # CASE con boost aplicado al combined_score.
@@ -483,7 +483,7 @@ async def test_search_handles_null_chunk_metadata() -> None:
     factory = _FakeSessionFactory(rows=[_row(metadata=None)])
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    out = await searcher.search("q")
+    out = await searcher.search("q", project_id="proj-test")
     assert out[0].section_title == ""
 
 
@@ -495,7 +495,7 @@ async def test_search_snippet_uses_custom_max_chars() -> None:
         embedder=embedder, session_factory=factory, snippet_max_chars=40
     )
 
-    out = await searcher.search("q")
+    out = await searcher.search("q", project_id="proj-test")
     assert len(out[0].snippet) == 40
     assert out[0].snippet.endswith("…")
     assert out[0].content == long_text
@@ -510,7 +510,7 @@ async def test_search_chunk_only_in_vector_branch_has_zero_fts() -> None:
     )
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    out = await searcher.search("q")
+    out = await searcher.search("q", project_id="proj-test")
     assert out[0].vector_score == pytest.approx(0.85)
     assert out[0].fulltext_score == 0.0
 
@@ -522,6 +522,6 @@ async def test_search_chunk_only_in_fts_branch_has_zero_vector() -> None:
     )
     searcher = HybridSearcher(embedder=embedder, session_factory=factory)
 
-    out = await searcher.search("q")
+    out = await searcher.search("q", project_id="proj-test")
     assert out[0].vector_score == 0.0
     assert out[0].fulltext_score == pytest.approx(0.9)

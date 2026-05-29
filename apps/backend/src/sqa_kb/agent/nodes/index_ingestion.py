@@ -174,8 +174,16 @@ async def _create_ingestion_item(
 ) -> IngestionItem:
     assert state.suggested_classification is not None
     assert state.traceability is not None
+    # TODO Fase 9.5: cuando AgentState exponga `project_id`, leerlo de ahí.
+    # Por ahora cae a `gk-general` para preservar back-compat con sesiones
+    # legacy del agente que no son project-aware.
+    from sqa_kb.adapters.repositories.postgres.mappers import (
+        GK_GENERAL_PROJECT_ID,
+    )
+
     item = IngestionItem(
         id=f"ing-{uuid.uuid4().hex[:8]}",
+        project_id=GK_GENERAL_PROJECT_ID,
         filename=f"{document_id}.md",
         size_bytes=len((state.extracted_text or "").encode("utf-8")),
         paginas=max(1, (state.sections_detected or 1)),

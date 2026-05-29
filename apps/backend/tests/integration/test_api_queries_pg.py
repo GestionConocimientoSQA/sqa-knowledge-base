@@ -78,6 +78,7 @@ class _ScriptedSearcher:
         self,
         query: str,  # noqa: ARG002
         *,
+        project_id: str | None = None,  # noqa: ARG002
         top_k: int = 5,  # noqa: ARG002
         carpetas: Iterable[str] | None = None,  # noqa: ARG002
         tipos: Iterable[str] | None = None,  # noqa: ARG002
@@ -175,7 +176,7 @@ async def test_post_queries_persists_query_row_in_db(
 
     resp = client.post(
         "/queries",
-        json={"query": "qué es flaky"},
+        json={"projectId": GK_GENERAL_PROJECT_ID, "query": "qué es flaky"},
         headers={"Authorization": CAPTURADOR},
     )
     assert resp.status_code == 200, resp.text
@@ -213,7 +214,7 @@ async def test_post_queries_persists_one_citation_per_chunk(
 
     resp = client.post(
         "/queries",
-        json={"query": "x"},
+        json={"projectId": GK_GENERAL_PROJECT_ID, "query": "x"},
         headers={"Authorization": CAPTURADOR},
     )
     assert resp.status_code == 200
@@ -241,7 +242,7 @@ async def test_post_queries_no_results_persists_query_without_citations(
 
     resp = client.post(
         "/queries",
-        json={"query": "no matchea nada"},
+        json={"projectId": GK_GENERAL_PROJECT_ID, "query": "no matchea nada"},
         headers={"Authorization": CAPTURADOR},
     )
     assert resp.status_code == 200
@@ -270,5 +271,5 @@ async def test_post_queries_without_bearer_returns_401(
 ) -> None:
     """Sin token → 401 (espejo del enforcement de los otros endpoints)."""
     client, _ = client_with_fake_searcher
-    resp = client.post("/queries", json={"query": "x"})
+    resp = client.post("/queries", json={"projectId": GK_GENERAL_PROJECT_ID, "query": "x"})
     assert resp.status_code == 401

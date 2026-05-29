@@ -75,9 +75,16 @@ async def search_kb(
     searcher: HybridSearcher,
     *,
     query: str,
+    project_id: str | None = None,
     top_k: int = 3,
 ) -> list[ExistingDocument]:
     """Busca documentos similares al `query` en el KB usando hybrid search.
+
+    `project_id` es opcional en Fase 9.3 — cuando `None`, scopea a
+    `gk-general` (el proyecto raíz). Esto preserva back-compat con los
+    nodos del agente que aún no exponen `project_id` en `AgentState`.
+    En Fase 9.5 (sesiones de documentación con project context) el
+    cableo se hace obligatorio.
 
     Devuelve hasta `top_k` documentos únicos ordenados por relevancia
     (mejor score primero). `distance = 1 - score` — los nodos del agente
@@ -86,7 +93,16 @@ async def search_kb(
     """
     if not query.strip():
         return []
-    chunks = await searcher.search(query, top_k=top_k * CHUNK_OVERSAMPLE)
+    # Lazy import para no crear ciclo agent → adapters → agent.
+    from sqa_kb.adapters.repositories.postgres.mappers import (
+        GK_GENERAL_PROJECT_ID,
+    )
+
+    chunks = await searcher.search(
+        query,
+        project_id=project_id or GK_GENERAL_PROJECT_ID,
+        top_k=top_k * CHUNK_OVERSAMPLE,
+    )
     if not chunks:
         return []
 
@@ -129,9 +145,13 @@ async def search_kb_chunks(
     searcher: HybridSearcher,
     *,
     query: str,
+    project_id: str | None = None,
     top_k: int = 5,
 ) -> Sequence[HybridChunk]:
     """Variante que devuelve los chunks crudos del hybrid search.
+
+    `project_id` opcional en 9.3 — default `gk-general`. Misma justificación
+    que `search_kb`.
 
     Útil para nodos que necesitan el `content` del chunk (consultation
     para sintetizar respuesta, generation para citar) — no solo el
@@ -140,7 +160,15 @@ async def search_kb_chunks(
     """
     if not query.strip():
         return []
-    return await searcher.search(query, top_k=top_k)
+    from sqa_kb.adapters.repositories.postgres.mappers import (
+        GK_GENERAL_PROJECT_ID,
+    )
+
+    return await searcher.search(
+        query,
+        project_id=project_id or GK_GENERAL_PROJECT_ID,
+        top_k=top_k,
+    )
 
 
 # ===========================================================================

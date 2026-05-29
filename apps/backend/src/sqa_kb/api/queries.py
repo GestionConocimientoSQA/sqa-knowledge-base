@@ -12,11 +12,12 @@ A diferencia de `/sessions/{id}/messages` (el endpoint streaming del
 agente), `/queries` es síncrono — un solo request/response. Sirve al
 caso de uso "consulta rápida" del frontend sin abrir una sesión.
 
-IDOR
-====
-No aplica — el KB es lectura global para todos los usuarios autenticados.
-El filtro `carpetas`/`tipos` viaja en el body como scope opcional, no
-como control de acceso.
+IDOR / Multi-tenant (Fase 9.3)
+==============================
+El KB está scopeado por proyecto. El body acepta `projectId` obligatorio
+y el endpoint valida que el caller sea miembro del proyecto (o GK Lead)
+antes de consultar el retriever. Sin esa validación cualquier usuario
+autenticado podría pedir chunks de proyectos ajenos.
 
 Errors
 ======
@@ -37,8 +38,14 @@ from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from sqa_kb.api.dependencies import CurrentUser, KbSearcherDep, QueryRepoDep
+from sqa_kb.api.dependencies import (
+    CurrentUser,
+    KbSearcherDep,
+    ProjectServiceDep,
+    QueryRepoDep,
+)
 from sqa_kb.domain.entities import Query, QueryCitation
+from sqa_kb.domain.errors import ForbiddenError
 from sqa_kb.domain.value_objects import CategoryCode, DocTypeCode
 
 router = APIRouter(tags=["queries"], prefix="/queries")
@@ -62,6 +69,9 @@ class _CamelBase(BaseModel):
 class CreateQueryBody(_CamelBase):
     """Body para POST /queries."""
 
+    project_id: str = Field(min_length=1, max_length=64)
+    """UUID del proyecto cuyo KB se consulta. **Obligatorio desde Fase 9.3**.
+    El backend valida que el caller sea miembro o `gk_lead`."""
     query: str = Field(min_length=1, max_length=2000)
     """Texto de la consulta. 1-2000 chars."""
     top_k: int = Field(default=5, ge=1, le=50)
@@ -111,9 +121,19 @@ async def create_query(
     body: CreateQueryBody,
     searcher: KbSearcherDep,
     query_repo: QueryRepoDep,
+    projects: ProjectServiceDep,
     user: CurrentUser,
 ) -> QueryResultResponse:
-    """Ejecuta hybrid search, persiste la consulta + citaciones, devuelve top-K."""
+    """Ejecuta hybrid search, persiste la consulta + citaciones, devuelve top-K.
+
+    Valida la membership del caller en `body.project_id` antes de consultar
+    al retriever. Sin acceso → 404 (no diferenciamos 'no existe' vs 'no
+    podés verlo', misma convención IDOR del repo).
+    """
+    # Validación de acceso al proyecto. `projects.get` lanza NotFoundError
+    # si el usuario no tiene visibilidad (gk_lead siempre la tiene).
+    await projects.get(user, body.project_id)
+
     query_id = str(uuid.uuid4())
     asked_at = datetime.now(UTC)
 
@@ -128,6 +148,7 @@ async def create_query(
 
     chunks = await searcher.search(
         body.query,
+        project_id=body.project_id,
         top_k=body.top_k,
         carpetas=carpetas_filter,
         tipos=tipos_filter,
@@ -141,6 +162,7 @@ async def create_query(
     await query_repo.record(
         Query(
             id=query_id,
+            project_id=body.project_id,
             user_oid=user.oid,
             session_id=None,
             text=body.query,

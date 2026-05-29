@@ -153,7 +153,7 @@ async def test_search_finds_chunk_with_fts_match_even_when_vector_far(
         embedder=_StaticEmbedder(vector=_vec_with_first(0.99)),
         session_factory=session_factory,
     )
-    out = await searcher.search("Playwright", top_k=10)
+    out = await searcher.search("Playwright", project_id=GK_GENERAL_PROJECT_ID, top_k=10)
 
     ours = [c for c in out if c.document_id == doc_id]
     assert len(ours) == 1
@@ -181,7 +181,7 @@ async def test_search_finds_chunk_with_vector_match_no_fts(
         embedder=_StaticEmbedder(vector=_vec_with_first(0.95)),
         session_factory=session_factory,
     )
-    out = await searcher.search("zzzqxq", top_k=10)
+    out = await searcher.search("zzzqxq", project_id=GK_GENERAL_PROJECT_ID, top_k=10)
     ours = [c for c in out if c.document_id == doc_id]
     assert len(ours) == 1
     assert ours[0].vector_score > 0
@@ -223,7 +223,7 @@ async def test_search_chunk_with_both_matches_outranks_single_branch(
         embedder=_StaticEmbedder(vector=_vec_with_first(0.95)),
         session_factory=session_factory,
     )
-    out = await searcher.search("Playwright", top_k=10)
+    out = await searcher.search("Playwright", project_id=GK_GENERAL_PROJECT_ID, top_k=10)
 
     # Mapeo rápido por document_id.
     by_doc = {c.document_id: c for c in out}
@@ -253,7 +253,7 @@ async def test_search_filters_by_carpeta(session_factory) -> None:  # type: igno
         embedder=_StaticEmbedder(vector=_vec_with_first(0.7)),
         session_factory=session_factory,
     )
-    out = await searcher.search("Playwright", top_k=50, carpetas=["TEC"])
+    out = await searcher.search("Playwright", project_id=GK_GENERAL_PROJECT_ID, top_k=50, carpetas=["TEC"])
     ids = {c.document_id for c in out}
     assert doc_tec in ids
     assert doc_proc not in ids
@@ -278,7 +278,7 @@ async def test_search_filters_by_tipo(session_factory) -> None:  # type: ignore[
         embedder=_StaticEmbedder(vector=_vec_with_first(0.7)),
         session_factory=session_factory,
     )
-    out = await searcher.search("Playwright", top_k=50, tipos=["PROC"])
+    out = await searcher.search("Playwright", project_id=GK_GENERAL_PROJECT_ID, top_k=50, tipos=["PROC"])
     ids = {c.document_id for c in out}
     assert doc_proc in ids
     assert doc_pol not in ids
@@ -305,7 +305,7 @@ async def test_search_authoritative_only_excludes_non_authoritative(
         embedder=_StaticEmbedder(vector=_vec_with_first(0.99)),
         session_factory=session_factory,
     )
-    out = await searcher.search("Playwright", top_k=50, authoritative_only=True)
+    out = await searcher.search("Playwright", project_id=GK_GENERAL_PROJECT_ID, top_k=50, authoritative_only=True)
     ids = {c.document_id for c in out}
     assert doc_auth in ids
     assert doc_normal not in ids
@@ -333,7 +333,7 @@ async def test_search_authoritative_boost_promotes_authoritative(
         embedder=_StaticEmbedder(vector=same_vec),
         session_factory=session_factory,
     )
-    out = await searcher.search("Playwright", top_k=50)
+    out = await searcher.search("Playwright", project_id=GK_GENERAL_PROJECT_ID, top_k=50)
     ours = [c for c in out if c.document_id in {doc_normal, doc_auth}]
     assert len(ours) == 2
     # Autoritativo gana por el boost.
@@ -360,7 +360,7 @@ async def test_search_special_characters_in_query_do_not_break(
         session_factory=session_factory,
     )
     # Caracteres tsquery (&, |, !, :, paréntesis) + comilla simple.
-    out = await searcher.search("foo & bar | !baz : (qux) 'drop'", top_k=10)
+    out = await searcher.search("foo & bar | !baz : (qux) 'drop'", project_id=GK_GENERAL_PROJECT_ID, top_k=10)
     # No revienta — devuelve lo que matchee (probablemente vacío o solo vector).
     assert isinstance(out, list)
 
@@ -400,5 +400,5 @@ async def test_search_top_k_caps_result_count(session_factory) -> None:  # type:
         embedder=_StaticEmbedder(vector=_vec_with_first(0.6)),
         session_factory=session_factory,
     )
-    out = await searcher.search("Playwright", top_k=2)
+    out = await searcher.search("Playwright", project_id=GK_GENERAL_PROJECT_ID, top_k=2)
     assert len(out) <= 2

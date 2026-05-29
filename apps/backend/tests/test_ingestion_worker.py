@@ -19,6 +19,7 @@ from sqa_kb.services.ingestion_service import process_ingestion_background
 def _item(status=IngestionStatus.EN_REVISION) -> IngestionItem:  # type: ignore[no-untyped-def]
     return IngestionItem(
         id="ing-1",
+        project_id="proj-test",
         filename="x.docx",
         size_bytes=10,
         status=status,

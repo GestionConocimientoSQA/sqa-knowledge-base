@@ -175,7 +175,7 @@ async def test_retrieve_finds_chunks_with_real_cosine_distance(session_factory) 
         embedder=_StaticEmbedder(vector=_vec_with_first(0.95)),
         session_factory=session_factory,
     )
-    out = await retriever.retrieve("q", top_k=5)
+    out = await retriever.retrieve("q", project_id=GK_GENERAL_PROJECT_ID, top_k=5)
 
     # Filtramos los chunks del doc nuestro (otros tests pueden haber
     # dejado data — no asumimos DB virgen).
@@ -206,7 +206,7 @@ async def test_retrieve_authoritative_boost_changes_ranking(session_factory) -> 
         embedder=_StaticEmbedder(vector=same_vec),
         session_factory=session_factory,
     )
-    out = await retriever.retrieve("q", top_k=50)
+    out = await retriever.retrieve("q", project_id=GK_GENERAL_PROJECT_ID, top_k=50)
     ours = [c for c in out if c.document_id in {doc_normal, doc_auth}]
     assert len(ours) == 2
     # Tras re-rank, autoritativo primero.
@@ -230,7 +230,7 @@ async def test_retrieve_filters_by_carpeta(session_factory) -> None:  # type: ig
         embedder=_StaticEmbedder(vector=_vec_with_first(0.7)),
         session_factory=session_factory,
     )
-    out = await retriever.retrieve("q", top_k=50, carpetas=["TEC"])
+    out = await retriever.retrieve("q", project_id=GK_GENERAL_PROJECT_ID, top_k=50, carpetas=["TEC"])
     returned_ids = {c.document_id for c in out}
     assert doc_tec in returned_ids
     assert doc_proc not in returned_ids
@@ -250,7 +250,7 @@ async def test_retrieve_filters_by_tipo(session_factory) -> None:  # type: ignor
         embedder=_StaticEmbedder(vector=_vec_with_first(0.7)),
         session_factory=session_factory,
     )
-    out = await retriever.retrieve("q", top_k=50, tipos=["PROC"])
+    out = await retriever.retrieve("q", project_id=GK_GENERAL_PROJECT_ID, top_k=50, tipos=["PROC"])
     returned_ids = {c.document_id for c in out}
     assert doc_proc in returned_ids
     assert doc_pol not in returned_ids
@@ -271,7 +271,7 @@ async def test_retrieve_authoritative_only_excludes_others(session_factory) -> N
         embedder=_StaticEmbedder(vector=_vec_with_first(0.99)),
         session_factory=session_factory,
     )
-    out = await retriever.retrieve("q", top_k=50, authoritative_only=True)
+    out = await retriever.retrieve("q", project_id=GK_GENERAL_PROJECT_ID, top_k=50, authoritative_only=True)
     returned_ids = {c.document_id for c in out}
     assert doc_auth in returned_ids
     assert doc_normal not in returned_ids
@@ -295,7 +295,11 @@ async def test_retrieve_top_k_limits_results(session_factory) -> None:  # type: 
     # Restrinjo al doc nuestro vía filtro de tipo+carpeta para que otros
     # tests no contaminen el conteo.
     out = await retriever.retrieve(
-        "q", top_k=2, carpetas=["TEC"], tipos=["POL"]
+        "q",
+        project_id=GK_GENERAL_PROJECT_ID,
+        top_k=2,
+        carpetas=["TEC"],
+        tipos=["POL"],
     )
     ours = [c for c in out if c.document_id == doc_id]
     # No podemos asertar `len(out) == 2` globalmente (otros tests dejaron
@@ -323,4 +327,87 @@ async def test_hnsw_index_exists_after_migration(db_engine) -> None:  # type: ig
         row = result.first()
     assert row is not None, (
         "El índice HNSW no existe — ¿corriste `alembic upgrade head`?"
+    )
+
+
+# ===========================================================================
+# Aislamiento multi-tenant (Fase 9.3)
+# ===========================================================================
+
+
+async def test_retrieve_isolates_chunks_by_project_id(  # type: ignore[no-untyped-def]
+    session_factory,
+    db_engine,
+) -> None:
+    """**Test crítico** del scoping multi-tenant.
+
+    Sembramos dos proyectos con chunks muy similares al query. Una consulta
+    al proyecto A NO debe devolver chunks del proyecto B, incluso si los
+    embeddings son idénticos. Si este test falla, hay leak entre tenants.
+    """
+    # Crear un proyecto B temporal (A es gk-general por default).
+    project_b_id = str(uuid.uuid4())
+    async with db_engine.connect() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO projects (id, slug, name, owner_oid) "
+                "VALUES (:id, :slug, :name, :owner) "
+                "ON CONFLICT (id) DO NOTHING"
+            ),
+            {
+                "id": project_b_id,
+                "slug": f"proj-iso-{project_b_id[:8]}",
+                "name": "Proyecto B",
+                "owner": "stub-gklead-00000000",
+            },
+        )
+        await conn.commit()
+
+    suffix = uuid.uuid4().hex[:6]
+    doc_a = f"POL-isoA-{suffix}-2026-05-29"
+    doc_b = f"POL-isoB-{suffix}-2026-05-29"
+
+    # Doc A en gk-general.
+    await _ensure_doc(session_factory, doc_id=doc_a, titulo="DocA")
+    # Doc B en proyecto B — sobrescribimos project_id directo via update.
+    await _ensure_doc(session_factory, doc_id=doc_b, titulo="DocB")
+    async with db_engine.connect() as conn:
+        await conn.execute(
+            text("UPDATE documents SET project_id = :pid WHERE id = :id"),
+            {"pid": project_b_id, "id": doc_b},
+        )
+        await conn.commit()
+
+    # Mismo vector — chunks deberían empatar si no hubiera filtro.
+    await _seed_chunk(
+        session_factory, doc_id=doc_a, vector=_vec_with_first(0.95),
+        content="contenido A", chunk_index=0,
+    )
+    await _seed_chunk(
+        session_factory, doc_id=doc_b, vector=_vec_with_first(0.95),
+        content="contenido B", chunk_index=0,
+    )
+
+    retriever = VectorRetriever(
+        embedder=_StaticEmbedder(vector=_vec_with_first(0.95)),
+        session_factory=session_factory,
+    )
+
+    # Consulta al proyecto A — solo debe devolver chunks del doc A.
+    out_a = await retriever.retrieve(
+        "q", project_id=GK_GENERAL_PROJECT_ID, top_k=10
+    )
+    doc_ids_a = {c.document_id for c in out_a}
+    assert doc_a in doc_ids_a
+    assert doc_b not in doc_ids_a, (
+        "LEAK MULTI-TENANT: chunks del proyecto B aparecieron en query "
+        "del proyecto A. El filtro project_id no se está aplicando."
+    )
+
+    # Y a la inversa: consulta a B no devuelve chunks de A.
+    out_b = await retriever.retrieve("q", project_id=project_b_id, top_k=10)
+    doc_ids_b = {c.document_id for c in out_b}
+    assert doc_b in doc_ids_b
+    assert doc_a not in doc_ids_b, (
+        "LEAK MULTI-TENANT inverso: chunks de A aparecieron en query de B."
     )

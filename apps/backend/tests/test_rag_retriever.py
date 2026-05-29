@@ -199,7 +199,7 @@ async def test_retrieve_embeds_query_text_and_returns_chunks() -> None:
     factory = _FakeSessionFactory(rows=[_row(content="Resultado de prueba.", score=0.91)])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    chunks = await retriever.retrieve("¿qué dice la política de QA?")
+    chunks = await retriever.retrieve("¿qué dice la política de QA?", project_id="proj-test")
 
     assert embedder.queries_seen == ["¿qué dice la política de QA?"]
     assert len(chunks) == 1
@@ -218,7 +218,7 @@ async def test_retrieve_top_k_zero_returns_empty_and_does_not_embed() -> None:
     factory = _FakeSessionFactory(rows=[_row()])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    out = await retriever.retrieve("query", top_k=0)
+    out = await retriever.retrieve("query", project_id="proj-test", top_k=0)
     assert out == []
     assert embedder.queries_seen == []
     assert factory.captured == []
@@ -229,7 +229,7 @@ async def test_retrieve_no_rows_returns_empty_list() -> None:
     factory = _FakeSessionFactory(rows=[])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    out = await retriever.retrieve("nada matchea")
+    out = await retriever.retrieve("nada matchea", project_id="proj-test")
     assert out == []
     assert len(factory.captured) == 1  # sí pegó a la DB
 
@@ -240,7 +240,7 @@ async def test_retrieve_handles_embedder_returning_empty_vectors() -> None:
     factory = _FakeSessionFactory(rows=[_row()])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    out = await retriever.retrieve("query")
+    out = await retriever.retrieve("query", project_id="proj-test")
     assert out == []
     assert factory.captured == []  # ni intentó consultar
 
@@ -255,7 +255,7 @@ async def test_retrieve_passes_carpetas_as_bind_param_not_string() -> None:
     factory = _FakeSessionFactory(rows=[])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    await retriever.retrieve("q", carpetas=["TEC", "ARQ"])
+    await retriever.retrieve("q", project_id="proj-test", carpetas=["TEC", "ARQ"])
     call = factory.captured[0]
 
     # El SQL contiene placeholder, no los valores concatenados.
@@ -271,7 +271,7 @@ async def test_retrieve_passes_tipos_as_bind_param() -> None:
     factory = _FakeSessionFactory(rows=[])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    await retriever.retrieve("q", tipos=["POL", "PROC"])
+    await retriever.retrieve("q", project_id="proj-test", tipos=["POL", "PROC"])
     call = factory.captured[0]
 
     assert "d.tipo IN" in call.sql
@@ -284,7 +284,7 @@ async def test_retrieve_authoritative_only_adds_predicate() -> None:
     factory = _FakeSessionFactory(rows=[])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    await retriever.retrieve("q", authoritative_only=True)
+    await retriever.retrieve("q", project_id="proj-test", authoritative_only=True)
     call = factory.captured[0]
 
     assert "d.autoritativo = TRUE" in call.sql
@@ -296,7 +296,7 @@ async def test_retrieve_omits_filters_when_not_provided() -> None:
     factory = _FakeSessionFactory(rows=[])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    await retriever.retrieve("q")
+    await retriever.retrieve("q", project_id="proj-test")
     call = factory.captured[0]
 
     assert "d.carpeta IN" not in call.sql
@@ -313,7 +313,7 @@ async def test_retrieve_empty_filter_lists_are_treated_as_no_filter() -> None:
     factory = _FakeSessionFactory(rows=[])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    await retriever.retrieve("q", carpetas=[], tipos=[])
+    await retriever.retrieve("q", project_id="proj-test", carpetas=[], tipos=[])
     call = factory.captured[0]
     assert "d.carpeta IN" not in call.sql
     assert "d.tipo IN" not in call.sql
@@ -329,7 +329,7 @@ async def test_retrieve_default_boost_is_passed_as_param() -> None:
     factory = _FakeSessionFactory(rows=[])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    await retriever.retrieve("q")
+    await retriever.retrieve("q", project_id="proj-test")
     call = factory.captured[0]
 
     assert call.params["boost"] == pytest.approx(DEFAULT_AUTHORITATIVE_BOOST)
@@ -342,7 +342,7 @@ async def test_retrieve_boost_override_per_call() -> None:
     factory = _FakeSessionFactory(rows=[])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    await retriever.retrieve("q", authoritative_boost=1.5)
+    await retriever.retrieve("q", project_id="proj-test", authoritative_boost=1.5)
     assert factory.captured[0].params["boost"] == pytest.approx(1.5)
 
 
@@ -353,7 +353,7 @@ async def test_retrieve_boost_override_at_construction() -> None:
         embedder=embedder, session_factory=factory, default_authoritative_boost=1.3
     )
 
-    await retriever.retrieve("q")
+    await retriever.retrieve("q", project_id="proj-test")
     assert factory.captured[0].params["boost"] == pytest.approx(1.3)
 
 
@@ -378,7 +378,7 @@ async def test_retrieve_reranks_by_score_desc() -> None:
     )
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    out = await retriever.retrieve("q")
+    out = await retriever.retrieve("q", project_id="proj-test")
     assert [c.chunk_id for c in out] == ["B", "C", "A"]
 
 
@@ -387,7 +387,7 @@ async def test_retrieve_top_k_propagates_to_sql_param() -> None:
     factory = _FakeSessionFactory(rows=[])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    await retriever.retrieve("q", top_k=12)
+    await retriever.retrieve("q", project_id="proj-test", top_k=12)
     assert factory.captured[0].params["top_k"] == 12
 
 
@@ -397,7 +397,7 @@ async def test_retrieve_qvec_is_serialized_pgvector_literal() -> None:
     factory = _FakeSessionFactory(rows=[])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    await retriever.retrieve("q")
+    await retriever.retrieve("q", project_id="proj-test")
     qvec = factory.captured[0].params["qvec"]
     assert isinstance(qvec, str)
     assert qvec.startswith("[") and qvec.endswith("]")
@@ -418,7 +418,7 @@ async def test_retrieve_handles_chunk_without_section_title_metadata() -> None:
     factory = _FakeSessionFactory(rows=[_row(metadata={"strategy": "semantic"})])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    out = await retriever.retrieve("q")
+    out = await retriever.retrieve("q", project_id="proj-test")
     assert out[0].section_title == ""
 
 
@@ -429,7 +429,7 @@ async def test_retrieve_handles_null_chunk_metadata() -> None:
     factory = _FakeSessionFactory(rows=[_row(metadata=None)])
     retriever = VectorRetriever(embedder=embedder, session_factory=factory)
 
-    out = await retriever.retrieve("q")
+    out = await retriever.retrieve("q", project_id="proj-test")
     assert out[0].section_title == ""
 
 
@@ -441,7 +441,7 @@ async def test_retrieve_snippet_respects_construction_max_chars() -> None:
         embedder=embedder, session_factory=factory, snippet_max_chars=50
     )
 
-    out = await retriever.retrieve("q")
+    out = await retriever.retrieve("q", project_id="proj-test")
     assert len(out[0].snippet) == 50
     assert out[0].snippet.endswith("…")
     # El `content` original queda intacto.

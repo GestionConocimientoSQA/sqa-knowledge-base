@@ -133,6 +133,7 @@ class VectorRetriever:
         self,
         query: str,
         *,
+        project_id: str,
         top_k: int = DEFAULT_TOP_K,
         carpetas: Iterable[str] | None = None,
         tipos: Iterable[str] | None = None,
@@ -143,6 +144,10 @@ class VectorRetriever:
 
         Args:
             query: texto del usuario (se embedea con `input_type=search_query`).
+            project_id: UUID del proyecto cuyo KB se consulta. **Obligatorio**
+                desde Fase 9.3 — sin él no hay aislamiento entre tenants. El
+                caller (servicio o agente) es responsable de validar que el
+                usuario tenga acceso al proyecto antes de invocar.
             top_k: máximo de chunks a devolver. `top_k <= 0` devuelve [].
             carpetas: si se pasa, filtra por `documents.carpeta IN (...)`.
                 Acepta strings o `CategoryCode` (StrEnum) indistintamente.
@@ -167,11 +172,18 @@ class VectorRetriever:
             else self._default_boost
         )
 
-        clauses: list[str] = ["c.embedding IS NOT NULL"]
+        # `c.project_id` también puede usarse (la columna se backfilea en
+        # chunks), pero filtrar por `d.project_id` mantiene el origen del
+        # scoping en `documents` — fuente de verdad para el tenant.
+        clauses: list[str] = [
+            "c.embedding IS NOT NULL",
+            "d.project_id = :project_id",
+        ]
         params: dict[str, object] = {
             "qvec": qvec_literal,
             "boost": float(boost),
             "top_k": int(top_k),
+            "project_id": project_id,
         }
         expanding_binds: list = []
 

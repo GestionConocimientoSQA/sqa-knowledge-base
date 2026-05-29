@@ -14,18 +14,25 @@ from datetime import UTC, datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from sqa_kb.api.dependencies import get_current_user, get_ingestion_service
-from sqa_kb.domain.entities import IngestionItem, User
+from sqa_kb.api.dependencies import (
+    get_current_user,
+    get_ingestion_service,
+    get_project_service,
+)
+from sqa_kb.domain.entities import IngestionItem, Project, User
 from sqa_kb.domain.value_objects import (
     IngestionStatus,
     RoleId,
 )
 from sqa_kb.main import create_app
 
+_PROJECT_ID = "00000000-0000-0000-0000-000000000001"
+
 
 def _item(item_id: str = "ing-abc123", status=IngestionStatus.PENDIENTE_METADATA) -> IngestionItem:  # type: ignore[no-untyped-def]
     return IngestionItem(
         id=item_id,
+        project_id=_PROJECT_ID,
         filename="memoria.docx",
         size_bytes=1024,
         status=status,
@@ -33,6 +40,20 @@ def _item(item_id: str = "ing-abc123", status=IngestionStatus.PENDIENTE_METADATA
         uploaded_at=datetime(2026, 5, 26, tzinfo=UTC),
         blob_path=f"{item_id}/memoria.docx",
     )
+
+
+@dataclass
+class _FakeProjectService:
+    """Acepta cualquier project_id (los tests de IDOR viven en test_api_projects)."""
+
+    async def get(self, caller: User, project_id: str) -> Project:  # noqa: ARG002
+        return Project(
+            id=project_id,
+            slug="proj-test",
+            name="Proyecto de test",
+            owner_oid=caller.oid,
+            created_at=datetime.now(UTC),
+        )
 
 
 @dataclass
@@ -47,12 +68,19 @@ class _FakeService:
     items_to_return: list[IngestionItem] = field(default_factory=list)
 
     async def upload(
-        self, *, filename: str, data: bytes, uploaded_by_oid: str, source_origin: str = ""
+        self,
+        *,
+        filename: str,
+        data: bytes,
+        uploaded_by_oid: str,
+        project_id: str,
+        source_origin: str = "",
     ) -> IngestionItem:
         self.last_upload = {
             "filename": filename,
             "size": len(data),
             "oid": uploaded_by_oid,
+            "project_id": project_id,
             "source": source_origin,
         }
         return _item()
@@ -105,6 +133,7 @@ def client_and_service() -> Iterator[tuple[TestClient, _FakeService]]:
     app = create_app()
     svc = _FakeService()
     app.dependency_overrides[get_ingestion_service] = lambda: svc
+    app.dependency_overrides[get_project_service] = lambda: _FakeProjectService()
     app.dependency_overrides[get_current_user] = lambda: _user()
     with TestClient(app) as client:
         yield client, svc
@@ -119,7 +148,7 @@ def client_and_service() -> Iterator[tuple[TestClient, _FakeService]]:
 def test_upload_returns_201_and_item(client_and_service) -> None:  # type: ignore[no-untyped-def]
     client, svc = client_and_service
     resp = client.post(
-        "/ingestion",
+        f"/ingestion?projectId={_PROJECT_ID}",
         files={"file": ("memoria.docx", b"contenido binario", "application/octet-stream")},
     )
     assert resp.status_code == 201
@@ -138,11 +167,12 @@ def test_upload_returns_201_and_item(client_and_service) -> None:  # type: ignor
 def test_upload_passes_source_origin_query(client_and_service) -> None:  # type: ignore[no-untyped-def]
     client, svc = client_and_service
     resp = client.post(
-        "/ingestion?sourceOrigin=https://sp/x",
+        f"/ingestion?projectId={_PROJECT_ID}&sourceOrigin=https://sp/x",
         files={"file": ("a.docx", b"x", "application/octet-stream")},
     )
     assert resp.status_code == 201
     assert svc.last_upload["source"] == "https://sp/x"
+    assert svc.last_upload["project_id"] == _PROJECT_ID
 
 
 # ===========================================================================

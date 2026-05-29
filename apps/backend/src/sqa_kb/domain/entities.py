@@ -406,6 +406,11 @@ class Document(_Base):
 
     id: Slug
     """Slug `[TIPO]-[topic]-[YYYY-MM-DD]` — mismo que produce el agente."""
+    project_id: NonEmptyStr | None = None
+    """UUID del proyecto al que pertenece. **None** solo durante migración
+    legacy / tests que no pasaron por el pipeline post-Fase 9 — el mapper
+    cae a `gk-general` cuando es None. Nuevas inserciones desde
+    `IngestionService.approve` ya lo cablean explícitamente."""
     titulo: NonEmptyStr
     carpeta: CategoryCode
     tipo: DocTypeCode
@@ -476,6 +481,9 @@ class IngestionItem(_Base):
     """Documento aprobado en cola de procesamiento (extracción + indexación)."""
 
     id: NonEmptyStr
+    project_id: NonEmptyStr
+    """UUID del proyecto al que pertenece el item. Scoping multi-tenant
+    desde Fase 9.3 — el documento generado al aprobar hereda este `project_id`."""
     filename: NonEmptyStr
     size_bytes: int = Field(ge=0)
     paginas: int = Field(ge=0, default=0)
@@ -504,6 +512,9 @@ class Query(_Base):
     """Consulta del modo B. Persistida para análisis y gap detection."""
 
     id: NonEmptyStr
+    project_id: NonEmptyStr
+    """UUID del proyecto al que pertenece la consulta. Scoping multi-tenant
+    desde Fase 9.3 — no hay queries cross-project."""
     user_oid: NonEmptyStr
     session_id: NonEmptyStr | None = None
     text: NonEmptyStr

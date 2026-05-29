@@ -20,7 +20,11 @@ from fastapi import APIRouter, BackgroundTasks, File, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from sqa_kb.api.dependencies import CurrentUser, IngestionServiceDep
+from sqa_kb.api.dependencies import (
+    CurrentUser,
+    IngestionServiceDep,
+    ProjectServiceDep,
+)
 from sqa_kb.domain.entities import IngestionItem
 from sqa_kb.domain.value_objects import CategoryCode, DocTypeCode, IngestionStatus
 from sqa_kb.services.ingestion_service import (
@@ -65,22 +69,32 @@ class RejectBody(_CamelBase):
 @router.post("", response_model=IngestionItem, status_code=201)
 async def upload_document(
     service: IngestionServiceDep,
+    projects: ProjectServiceDep,
     user: CurrentUser,
     background: BackgroundTasks,
     file: Annotated[UploadFile, File()],
+    project_id: Annotated[str, Query(alias="projectId", min_length=1)],
     source_origin: Annotated[str, Query(alias="sourceOrigin")] = "",
 ) -> IngestionItem:
-    """Sube un archivo a la cola de ingesta. Valida tamaño + formato.
+    """Sube un archivo a la cola de ingesta del proyecto. Valida membership
+    + tamaño + formato.
+
+    `projectId` es obligatorio desde Fase 9.3 — el caller debe ser miembro
+    del proyecto (o `gk_lead`). Sin acceso → 404 (convención IDOR).
 
     Tras crear el item, agenda la auto-clasificación en background
     (worker `ingestion_processor`) para que cuando el usuario abra el
     item en la UI ya tenga carpeta/tipo sugeridos.
     """
+    # Verifica acceso al proyecto antes de aceptar el upload.
+    await projects.get(user, project_id)
+
     data = await file.read()
     item = await service.upload(
         filename=file.filename or "documento",
         data=data,
         uploaded_by_oid=user.oid,
+        project_id=project_id,
         source_origin=source_origin,
     )
     background.add_task(process_ingestion_background, service, item.id)

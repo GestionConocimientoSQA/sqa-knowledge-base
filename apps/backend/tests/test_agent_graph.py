@@ -82,6 +82,7 @@ class _FakeSearcher:
         self,
         query: str,  # noqa: ARG002
         *,
+        project_id: str | None = None,  # noqa: ARG002
         top_k: int = 5,  # noqa: ARG002
         carpetas=None,  # type: ignore[no-untyped-def] # noqa: ARG002
         tipos=None,  # type: ignore[no-untyped-def] # noqa: ARG002

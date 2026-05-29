@@ -146,6 +146,7 @@ class HybridSearcher:
         self,
         query: str,
         *,
+        project_id: str,
         top_k: int = DEFAULT_TOP_K,
         carpetas: Iterable[str] | None = None,
         tipos: Iterable[str] | None = None,
@@ -157,6 +158,11 @@ class HybridSearcher:
         Args:
             query: texto del usuario. Se embedea + se usa como input de
                 `plainto_tsquery('spanish', ...)`.
+            project_id: UUID del proyecto al que pertenece la consulta.
+                **Obligatorio desde Fase 9.3** — el filtro se aplica en
+                ambas CTE (vector + FTS) para que ninguna rama traiga
+                chunks fuera del tenant. El caller valida la membership
+                del usuario antes de invocar.
             top_k: máximo de chunks a devolver. `top_k <= 0` devuelve [].
             carpetas: filtra por `documents.carpeta IN (...)`.
             tipos: filtra por `documents.tipo IN (...)`.
@@ -184,7 +190,8 @@ class HybridSearcher:
         # Construcción de filtros (mismo patrón que VectorRetriever — se
         # aplican en AMBAS CTE para no traer chunks fuera de scope desde
         # ninguna rama).
-        filter_clauses: list[str] = []
+        # `d.project_id = :project_id` es OBLIGATORIO desde Fase 9.3.
+        filter_clauses: list[str] = ["d.project_id = :project_id"]
         params: dict[str, object] = {
             "qvec": qvec_literal,
             "query_text": query,
@@ -194,6 +201,7 @@ class HybridSearcher:
             "boost": float(boost),
             "candidates": int(self._candidates),
             "top_k": int(top_k),
+            "project_id": project_id,
         }
         expanding_binds: list = []
 

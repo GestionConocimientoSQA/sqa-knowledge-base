@@ -63,6 +63,7 @@ class _FakeSearcher:
         self,
         query: str,
         *,
+        project_id: str | None = None,  # noqa: ARG002
         top_k: int = 5,  # noqa: ARG002
         carpetas: Iterable[str] | None = None,  # noqa: ARG002
         tipos: Iterable[str] | None = None,  # noqa: ARG002

@@ -19,9 +19,10 @@ from fastapi.testclient import TestClient
 from sqa_kb.api.dependencies import (
     get_current_user,
     get_kb_searcher,
+    get_project_service,
     get_query_repo,
 )
-from sqa_kb.domain.entities import Query, QueryCitation, User
+from sqa_kb.domain.entities import Project, Query, QueryCitation, User
 from sqa_kb.domain.value_objects import RoleId
 from sqa_kb.main import create_app
 from sqa_kb.rag.hybrid_search import HybridChunk
@@ -70,6 +71,7 @@ class _FakeSearcher:
         self,
         query: str,
         *,
+        project_id: str,
         top_k: int = 5,
         carpetas: Iterable[str] | None = None,
         tipos: Iterable[str] | None = None,
@@ -78,6 +80,7 @@ class _FakeSearcher:
     ) -> Sequence[HybridChunk]:
         self.last_call = {
             "query": query,
+            "project_id": project_id,
             "top_k": top_k,
             "carpetas": list(carpetas) if carpetas else None,
             "tipos": list(tipos) if tipos else None,
@@ -85,6 +88,22 @@ class _FakeSearcher:
             "authoritative_boost": authoritative_boost,
         }
         return list(self.chunks_to_return)
+
+
+@dataclass
+class _FakeProjectService:
+    """Acepta cualquier project_id y devuelve un Project dummy. Los tests
+    de IDOR/membership viven en `test_project_service.py` y
+    `test_api_projects.py` — acá solo necesitamos que el gate pase."""
+
+    async def get(self, caller: User, project_id: str) -> Project:  # noqa: ARG002
+        return Project(
+            id=project_id,
+            slug="proj-test",
+            name="Proyecto de test",
+            owner_oid=caller.oid,
+            created_at=datetime.now(UTC),
+        )
 
 
 @dataclass
@@ -130,6 +149,7 @@ def client_with_overrides() -> Iterator[tuple[TestClient, _FakeSearcher, _FakeQu
     query_repo = _FakeQueryRepo()
     app.dependency_overrides[get_kb_searcher] = lambda: searcher
     app.dependency_overrides[get_query_repo] = lambda: query_repo
+    app.dependency_overrides[get_project_service] = lambda: _FakeProjectService()
     app.dependency_overrides[get_current_user] = lambda: _user()
     with TestClient(app) as client:
         yield client, searcher, query_repo
@@ -154,7 +174,7 @@ def test_post_queries_returns_chunks_and_persists_query(
         _chunk(chunk_id="c2", document_id="TEC-bar", score=0.7),
     ]
 
-    resp = client.post("/queries", json={"query": "flaky tests"})
+    resp = client.post("/queries", json={"projectId": "proj-test", "query": "flaky tests"})
     assert resp.status_code == 200
     body = resp.json()
 
@@ -183,7 +203,7 @@ def test_post_queries_no_results_persists_query_with_has_result_false(
     client, searcher, query_repo = client_with_overrides
     searcher.chunks_to_return = []  # sin matches
 
-    resp = client.post("/queries", json={"query": "no existe esto"})
+    resp = client.post("/queries", json={"projectId": "proj-test", "query": "no existe esto"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["hasResult"] is False
@@ -210,6 +230,7 @@ def test_post_queries_passes_filters_to_searcher(
     resp = client.post(
         "/queries",
         json={
+            "projectId": "proj-test",
             "query": "x",
             "topK": 3,
             "carpetas": ["TEC", "ARQ"],
@@ -233,7 +254,7 @@ def test_post_queries_no_filters_defaults(
     """Sin filtros en body, el searcher recibe None / False / defaults."""
     client, searcher, _ = client_with_overrides
 
-    resp = client.post("/queries", json={"query": "x"})
+    resp = client.post("/queries", json={"projectId": "proj-test", "query": "x"})
     assert resp.status_code == 200
 
     assert searcher.last_call["top_k"] == 5  # default del schema
@@ -251,7 +272,7 @@ def test_post_queries_empty_query_returns_422(
     client_with_overrides,  # type: ignore[no-untyped-def]
 ) -> None:
     client, _, _ = client_with_overrides
-    resp = client.post("/queries", json={"query": ""})
+    resp = client.post("/queries", json={"projectId": "proj-test", "query": ""})
     assert resp.status_code == 422
 
 
@@ -259,7 +280,7 @@ def test_post_queries_top_k_out_of_range_returns_422(
     client_with_overrides,  # type: ignore[no-untyped-def]
 ) -> None:
     client, _, _ = client_with_overrides
-    resp = client.post("/queries", json={"query": "x", "topK": 100})
+    resp = client.post("/queries", json={"projectId": "proj-test", "query": "x", "topK": 100})
     assert resp.status_code == 422
 
 
@@ -267,7 +288,7 @@ def test_post_queries_top_k_zero_returns_422(
     client_with_overrides,  # type: ignore[no-untyped-def]
 ) -> None:
     client, _, _ = client_with_overrides
-    resp = client.post("/queries", json={"query": "x", "topK": 0})
+    resp = client.post("/queries", json={"projectId": "proj-test", "query": "x", "topK": 0})
     assert resp.status_code == 422
 
 
@@ -277,7 +298,7 @@ def test_post_queries_invalid_carpeta_returns_422(
     """`carpetas` debe contener `CategoryCode` válidos."""
     client, _, _ = client_with_overrides
     resp = client.post(
-        "/queries", json={"query": "x", "carpetas": ["NOEXISTE"]}
+        "/queries", json={"projectId": "proj-test", "query": "x", "carpetas": ["NOEXISTE"]}
     )
     assert resp.status_code == 422
 
@@ -286,7 +307,7 @@ def test_post_queries_invalid_tipo_returns_422(
     client_with_overrides,  # type: ignore[no-untyped-def]
 ) -> None:
     client, _, _ = client_with_overrides
-    resp = client.post("/queries", json={"query": "x", "tipos": ["NOTIPO"]})
+    resp = client.post("/queries", json={"projectId": "proj-test", "query": "x", "tipos": ["NOTIPO"]})
     assert resp.status_code == 422
 
 
@@ -305,7 +326,7 @@ def test_post_queries_chunk_without_section_persists_dash_placeholder(
         _chunk(chunk_id="c1", document_id="DOC", section_title="")
     ]
 
-    resp = client.post("/queries", json={"query": "x"})
+    resp = client.post("/queries", json={"projectId": "proj-test", "query": "x"})
     assert resp.status_code == 200
     assert len(query_repo.citations) == 1
     assert query_repo.citations[0].section == "—"

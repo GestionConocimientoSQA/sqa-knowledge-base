@@ -12,7 +12,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from sqa_kb.adapters.repositories.postgres import models
-from sqa_kb.adapters.repositories.postgres.mappers import GK_GENERAL_PROJECT_ID
 from sqa_kb.adapters.repositories.postgres.session import session_scope
 from sqa_kb.domain.entities import HotTopic, Query, QueryCitation
 
@@ -26,7 +25,7 @@ class PostgresQueryRepository:
             db.add(
                 models.QueryModel(
                     id=query.id,
-                    project_id=GK_GENERAL_PROJECT_ID,
+                    project_id=query.project_id,
                     user_oid=query.user_oid,
                     session_id=query.session_id,
                     text=query.text,

@@ -167,7 +167,7 @@ async def test_upload_creates_item_and_stores_blob() -> None:
     item = await svc.upload(
         filename="memoria.docx",
         data=_docx_bytes(),
-        uploaded_by_oid="oid-1",
+        uploaded_by_oid="oid-1", project_id="proj-test",
         source_origin="https://sharepoint/x",
     )
     assert item.status == IngestionStatus.PENDIENTE_METADATA
@@ -182,20 +182,20 @@ async def test_upload_creates_item_and_stores_blob() -> None:
 async def test_upload_rejects_empty_file() -> None:
     svc, _ = _service()
     with pytest.raises(ValidationError, match="vacío"):
-        await svc.upload(filename="x.docx", data=b"", uploaded_by_oid="o")
+        await svc.upload(filename="x.docx", data=b"", uploaded_by_oid="o", project_id="proj-test")
 
 
 async def test_upload_rejects_oversized_file() -> None:
     svc, _ = _service()
     big = b"x" * (MAX_UPLOAD_BYTES + 1)
     with pytest.raises(ValidationError, match="límite"):
-        await svc.upload(filename="x.docx", data=big, uploaded_by_oid="o")
+        await svc.upload(filename="x.docx", data=big, uploaded_by_oid="o", project_id="proj-test")
 
 
 async def test_upload_rejects_unsupported_format() -> None:
     svc, _ = _service()
     with pytest.raises(ValidationError, match="no soportado"):
-        await svc.upload(filename="x.txt", data=b"hola", uploaded_by_oid="o")
+        await svc.upload(filename="x.txt", data=b"hola", uploaded_by_oid="o", project_id="proj-test")
 
 
 # ===========================================================================
@@ -206,7 +206,7 @@ async def test_upload_rejects_unsupported_format() -> None:
 async def test_classify_updates_item_with_suggestion() -> None:
     svc, deps = _service()
     item = await svc.upload(
-        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o"
+        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o", project_id="proj-test"
     )
     classified = await svc.classify(item.id)
     assert classified.status == IngestionStatus.EN_REVISION
@@ -221,7 +221,7 @@ async def test_classify_anonymizes_before_classifying() -> None:
     classifier = _FakeClassifier(_suggestion())
     svc, _ = _service(anonymizer=anonymizer, classifier=classifier)
     item = await svc.upload(
-        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o"
+        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o", project_id="proj-test"
     )
     await svc.classify(item.id)
     # El classifier fue invocado (texto pasó por el anonymizer no-op que
@@ -243,7 +243,7 @@ async def test_classify_unknown_item_raises() -> None:
 async def test_approve_creates_document_and_indexes() -> None:
     svc, deps = _service()
     item = await svc.upload(
-        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o"
+        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o", project_id="proj-test"
     )
     await svc.classify(item.id)
 
@@ -279,7 +279,7 @@ async def test_approve_creates_document_and_indexes() -> None:
 async def test_approve_marks_document_anonymized_when_replacements() -> None:
     svc, deps = _service(anonymizer=_CountingAnonymizer(replacements=3))
     item = await svc.upload(
-        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o"
+        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o", project_id="proj-test"
     )
     trace = TraceabilityInput(
         approved_by="X",
@@ -297,7 +297,7 @@ async def test_approve_marks_document_anonymized_when_replacements() -> None:
 async def test_approve_without_indexer_hook_still_creates_doc() -> None:
     svc, deps = _service(indexer_hook=None)
     item = await svc.upload(
-        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o"
+        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o", project_id="proj-test"
     )
     trace = TraceabilityInput(
         approved_by="X",
@@ -335,8 +335,8 @@ async def test_approve_unknown_item_raises() -> None:
 
 async def test_list_filters_by_status() -> None:
     svc, _ = _service()
-    a = await svc.upload(filename="a.docx", data=_docx_bytes(), uploaded_by_oid="o")
-    await svc.upload(filename="b.docx", data=_docx_bytes(), uploaded_by_oid="o")
+    a = await svc.upload(filename="a.docx", data=_docx_bytes(), uploaded_by_oid="o", project_id="proj-test")
+    await svc.upload(filename="b.docx", data=_docx_bytes(), uploaded_by_oid="o", project_id="proj-test")
     await svc.classify(a.id)  # a → en-revision
 
     en_revision = await svc.list_items(statuses=[IngestionStatus.EN_REVISION])
@@ -349,8 +349,8 @@ async def test_list_filters_by_status() -> None:
 
 async def test_list_all_when_no_status_filter() -> None:
     svc, _ = _service()
-    await svc.upload(filename="a.docx", data=_docx_bytes(), uploaded_by_oid="o")
-    await svc.upload(filename="b.docx", data=_docx_bytes(), uploaded_by_oid="o")
+    await svc.upload(filename="a.docx", data=_docx_bytes(), uploaded_by_oid="o", project_id="proj-test")
+    await svc.upload(filename="b.docx", data=_docx_bytes(), uploaded_by_oid="o", project_id="proj-test")
     all_items = await svc.list_items()
     assert len(all_items) == 2
 
@@ -363,7 +363,7 @@ async def test_list_all_when_no_status_filter() -> None:
 async def test_reject_marks_item_rechazado_with_reason() -> None:
     svc, _ = _service()
     item = await svc.upload(
-        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o"
+        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o", project_id="proj-test"
     )
     rejected = await svc.reject(item.id, reason="No cumple el estándar SQA")
     assert rejected.status == IngestionStatus.RECHAZADO
@@ -379,7 +379,7 @@ async def test_reject_unknown_item_raises() -> None:
 async def test_reject_empty_reason_uses_default() -> None:
     svc, _ = _service()
     item = await svc.upload(
-        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o"
+        filename="memoria.docx", data=_docx_bytes(), uploaded_by_oid="o", project_id="proj-test"
     )
     rejected = await svc.reject(item.id, reason="")
     assert rejected.status == IngestionStatus.RECHAZADO
